@@ -268,23 +268,22 @@ if (!$realData) {
                 if (preg_match('/<img[^>]+src=["\']([^"\'\s]+)["\']/', $fbHtml, $m)) {
                     $fbThumbnail = html_entity_decode($m[1]);
                 }
-                if (preg_match_all('/<a[^>]+href=["\'](https:\/\/ssscdn\.io\/getmyfb\/[^"\'\s]+)["\'][^>]*>(.*?)<\/a>/is', $fbHtml, $m)) {
-                    foreach ($m[1] as $idx => $linkUrl) {
-                        $label = trim(strip_tags($m[2][$idx]));
-                        if (empty($label) || strpos(strtolower($label), 'app') !== false) continue;
+                
+                if (preg_match_all('/<li[^>]*class=["\']results-list-item(?:\s+[^"\']*)?["\'][^>]*>(.*?)<a[^>]+href=["\']([^"\'\s]+)["\'][^>]*>(.*?)<\/a>/is', $fbHtml, $m)) {
+                    foreach ($m[2] as $idx => $linkUrl) {
+                        $itemContent = $m[1][$idx];
+                        if (strpos($itemContent, 'install-app') !== false) continue;
                         
                         $qualityLabel = "Download Media";
-                        if (strpos(strtolower($label), 'hd') !== false) {
-                            $qualityLabel = "Download (HD)";
-                        } elseif (strpos(strtolower($label), 'sd') !== false) {
-                            $qualityLabel = "Download (SD)";
+                        if (preg_match('/(\d+p\s*\([^)]+\)|\d+p|HD|SD|Mp3)/i', $itemContent, $qm)) {
+                            $qualityLabel = "Download (" . trim($qm[1]) . ")";
                         } else {
                             $qualityLabel = "Download Option " . (count($fbLinks) + 1);
                         }
 
                         $fbLinks[] = [
                             'url' => html_entity_decode($linkUrl),
-                            'format' => 'mp4',
+                            'format' => (strpos(strtolower($qualityLabel), 'mp3') !== false) ? 'mp3' : 'mp4',
                             'label' => $qualityLabel
                         ];
                     }
