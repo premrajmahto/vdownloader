@@ -23,15 +23,15 @@ if (isset($_GET['url']) && isset($_GET['name'])) {
     $host = strtolower(parse_url($fileUrl, PHP_URL_HOST) ?? '');
     if (strpos($host, 'youtube') !== false || strpos($host, 'googlevideo') !== false) {
         $referer = 'https://www.youtube.com/';
-    } elseif (strpos($host, 'facebook') !== false || strpos($host, 'fbcdn') !== false || strpos($host, 'ssscdn') !== false) {
+    } elseif (strpos($host, 'ssscdn') !== false || strpos($host, 'getmyfb') !== false) {
+        $referer = 'https://getmyfb.com/';
+    } elseif (strpos($host, 'facebook') !== false || strpos($host, 'fbcdn') !== false) {
         $referer = 'https://www.facebook.com/';
     } elseif (strpos($host, 'instagram') !== false || strpos($host, 'cdninstagram') !== false) {
         $referer = 'https://www.instagram.com/';
     }
 
     $headersSent = false;
-    $httpCode = 0;
-    $cancelStream = false;
 
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $fileUrl);
@@ -47,47 +47,36 @@ if (isset($_GET['url']) && isset($_GET['name'])) {
         'Sec-Fetch-Mode: navigate'
     ]);
 
-    // Inspect HTTP headers before streaming output
-    curl_setopt($ch, CURLOPT_HEADERFUNCTION, function($curl, $headerLine) use (&$headersSent, &$httpCode, &$cancelStream, $downloadName, $mimeType) {
-        $len = strlen($headerLine);
-        $trimmed = trim($headerLine);
-
-        if (preg_match('/^HTTP\/\d(?:\.\d)?\s+(\d+)/i', $trimmed, $m)) {
-            $httpCode = (int)$m[1];
-        }
-
-        // Empty line signals end of HTTP response headers
-        if ($trimmed === '' && $httpCode > 0) {
+    // Stream body bytes as they arrive
+    curl_setopt($ch, CURLOPT_WRITEFUNCTION, function($curl, $data) use (&$headersSent, $downloadName, $mimeType) {
+        $len = strlen($data);
+        if (!$headersSent) {
+            $httpCode = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
             if ($httpCode >= 200 && $httpCode < 300) {
-                if (!$headersSent) {
-                    if (ob_get_level()) {
-                        @ob_end_clean();
-                    }
-                    header('Content-Description: File Transfer');
-                    header('Content-Type: ' . $mimeType);
-                    header('Content-Disposition: attachment; filename="' . $downloadName . '"');
-                    header('Expires: 0');
-                    header('Cache-Control: must-revalidate');
-                    header('Pragma: public');
-                    $headersSent = true;
+                if (ob_get_level()) {
+                    @ob_end_clean();
                 }
+                header('Content-Description: File Transfer');
+                header('Content-Type: ' . $mimeType);
+                header('Content-Disposition: attachment; filename="' . $downloadName . '"');
+                header('Expires: 0');
+                header('Cache-Control: must-revalidate');
+                header('Pragma: public');
+
+                $contentLength = curl_getinfo($curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
+                if ($contentLength > 0) {
+                    header('Content-Length: ' . (int)$contentLength);
+                }
+
+                $headersSent = true;
             } else {
-                $cancelStream = true;
+                return 0; // Abort cURL transfer if HTTP status is non-2xx (e.g. 403, 404, 204)
             }
         }
-        return $len;
-    });
 
-    // Stream body bytes as they arrive
-    curl_setopt($ch, CURLOPT_WRITEFUNCTION, function($curl, $data) use (&$headersSent, &$cancelStream) {
-        if ($cancelStream) {
-            return 0; // Abort cURL transfer if HTTP status is non-2xx (e.g. 403, 404, 204)
-        }
-        if ($headersSent) {
-            echo $data;
-            flush();
-        }
-        return strlen($data);
+        echo $data;
+        flush();
+        return $len;
     });
 
     @curl_exec($ch);
