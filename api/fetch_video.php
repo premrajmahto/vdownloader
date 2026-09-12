@@ -162,63 +162,138 @@ if (file_exists($ytDlpExe)) {
     }
 }
 
-// Attempt 2: Fallback to an external API (useful for Live servers like Hostinger)
+// Attempt 2: Fallback to external REST APIs (essential for shared live servers like Hostinger)
 if (!$realData) {
     if (function_exists('curl_init')) {
-        $apiEndpoints = [
-            'https://api.cobalt.tools/api/json',
-            'https://cobalt-api.kwiatekit.com/api/json',
-            'https://co.pussthecat.org/api/json'
-        ];
-        
-        foreach ($apiEndpoints as $apiEndpoint) {
-            $ch = curl_init($apiEndpoint);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 8);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Accept: application/json',
-                'Content-Type: application/json',
-                'Origin: https://cobalt.tools',
-                'Referer: https://cobalt.tools/',
-                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            ]);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['url' => $url]));
+        // Fallback for YouTube URLs via Invidious / oEmbed
+        if ($platform === 'YouTube' && preg_match('/(?:v=|\/embed\/|\/1\/|\/v\/|https?:\/\/youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/', $url, $m)) {
+            $videoId = $m[1];
+            $title = "YouTube Video";
+            $thumbnail = "https://i.ytimg.com/vi/$videoId/maxresdefault.jpg";
             
-            $apiResp = @curl_exec($ch);
+            $oembedUrl = "https://www.youtube.com/oembed?url=" . urlencode($url) . "&format=json";
+            $ch = curl_init($oembedUrl);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 4);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+            $oembedRes = @curl_exec($ch);
             curl_close($ch);
-        
-            if ($apiResp) {
-                $apiJson = json_decode($apiResp, true);
-                if ($apiJson && isset($apiJson['status']) && $apiJson['status'] !== 'error') {
-                    $links = [];
-                    
-                    if ($apiJson['status'] === 'stream' || $apiJson['status'] === 'redirect') {
-                        $links[] = [
-                            'url' => $apiJson['url'],
-                            'format' => 'mp4',
-                            'label' => 'Download Media'
-                        ];
-                    } elseif ($apiJson['status'] === 'picker') {
-                        foreach ($apiJson['picker'] as $index => $item) {
-                             $links[] = [
-                                 'url' => $item['url'] ?? $item,
-                                 'format' => 'mp4',
-                                 'label' => 'Download ' . ($index + 1)
-                             ];
+            
+            if ($oembedRes) {
+                $oembedData = json_decode($oembedRes, true);
+                if (isset($oembedData['title'])) $title = $oembedData['title'];
+                if (isset($oembedData['thumbnail_url'])) $thumbnail = $oembedData['thumbnail_url'];
+            }
+            
+            $invidiousInstances = [
+                "https://invidious.nerdvpn.de/api/v1/videos/$videoId",
+                "https://inv.tux.pizza/api/v1/videos/$videoId",
+                "https://invidious.drgns.space/api/v1/videos/$videoId",
+                "https://invidious.flokinet.to/api/v1/videos/$videoId"
+            ];
+            
+            $links = [];
+            $durationFormat = '--';
+            
+            foreach ($invidiousInstances as $inst) {
+                $ch = curl_init($inst);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 6);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+                $res = @curl_exec($ch);
+                curl_close($ch);
+                
+                if ($res) {
+                    $json = json_decode($res, true);
+                    if ($json && isset($json['formatStreams'])) {
+                        if (isset($json['lengthSeconds'])) {
+                            $durationFormat = gmdate("H:i:s", (int)$json['lengthSeconds']);
                         }
+                        foreach ($json['formatStreams'] as $f) {
+                            if (!empty($f['url'])) {
+                                $quality = $f['qualityLabel'] ?? ($f['quality'] ?? 'Video');
+                                $ext = $f['container'] ?? 'mp4';
+                                $links[] = [
+                                    'url' => $f['url'],
+                                    'format' => $ext,
+                                    'label' => "Download ($quality)"
+                                ];
+                            }
+                        }
+                        if (!empty($links)) break;
                     }
-                    
-                    if (!empty($links)) {
-                        $realData = [
-                            'title' => 'Social Media Video',
-                            'thumbnail' => 'assets/images/placeholder.jpg',
-                            'duration' => '--',
-                            'size' => '--',
-                            'platform' => $platform,
-                            'links' => $links
-                        ];
-                        break; // Success! Break out of the loop
+                }
+            }
+            
+            if (!empty($links)) {
+                $realData = [
+                    'title' => $title,
+                    'thumbnail' => $thumbnail,
+                    'duration' => $durationFormat,
+                    'size' => '--',
+                    'platform' => 'YouTube',
+                    'links' => $links
+                ];
+            }
+        }
+        
+        // General fallback for all social media platforms
+        if (!$realData) {
+            $apiEndpoints = [
+                'https://api.cobalt.tools/',
+                'https://co.pussthecat.org/api/json'
+            ];
+            
+            foreach ($apiEndpoints as $apiEndpoint) {
+                $ch = curl_init($apiEndpoint);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 6);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                    'Accept: application/json',
+                    'Content-Type: application/json',
+                    'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                ]);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['url' => $url]));
+                
+                $apiResp = @curl_exec($ch);
+                curl_close($ch);
+            
+                if ($apiResp) {
+                    $apiJson = json_decode($apiResp, true);
+                    if ($apiJson && isset($apiJson['status']) && $apiJson['status'] !== 'error') {
+                        $links = [];
+                        
+                        if ($apiJson['status'] === 'stream' || $apiJson['status'] === 'redirect') {
+                            $links[] = [
+                                'url' => $apiJson['url'],
+                                'format' => 'mp4',
+                                'label' => 'Download Media'
+                            ];
+                        } elseif ($apiJson['status'] === 'picker') {
+                            foreach ($apiJson['picker'] as $index => $item) {
+                                 $links[] = [
+                                     'url' => $item['url'] ?? $item,
+                                     'format' => 'mp4',
+                                     'label' => 'Download ' . ($index + 1)
+                                 ];
+                            }
+                        }
+                        
+                        if (!empty($links)) {
+                            $realData = [
+                                'title' => 'Social Media Video',
+                                'thumbnail' => 'assets/images/placeholder.jpg',
+                                'duration' => '--',
+                                'size' => '--',
+                                'platform' => $platform,
+                                'links' => $links
+                            ];
+                            break;
+                        }
                     }
                 }
             }
