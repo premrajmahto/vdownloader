@@ -239,6 +239,70 @@ if (!$realData) {
             }
         }
         
+        // Fallback for Facebook URLs
+        if ($platform === 'Facebook' && !$realData) {
+            $ch = curl_init("https://getmyfb.com/process");
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'X-Requested-With: XMLHttpRequest',
+                'Origin: https://getmyfb.com',
+                'Referer: https://getmyfb.com/'
+            ]);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, "id=" . urlencode($url) . "&locale=en");
+            $fbHtml = @curl_exec($ch);
+            curl_close($ch);
+
+            if ($fbHtml) {
+                $fbLinks = [];
+                $fbTitle = "Facebook Video";
+                $fbThumbnail = "assets/images/placeholder.jpg";
+
+                if (preg_match('/<h4[^>]*class=["\']results-list-item-title["\'][^>]*>(.*?)<\/h4>/is', $fbHtml, $m)) {
+                    $fbTitle = trim(strip_tags(html_entity_decode($m[1])));
+                }
+                if (preg_match('/<img[^>]+src=["\']([^"\'\s]+)["\']/', $fbHtml, $m)) {
+                    $fbThumbnail = html_entity_decode($m[1]);
+                }
+                if (preg_match_all('/<a[^>]+href=["\'](https:\/\/ssscdn\.io\/getmyfb\/[^"\'\s]+)["\'][^>]*>(.*?)<\/a>/is', $fbHtml, $m)) {
+                    foreach ($m[1] as $idx => $linkUrl) {
+                        $label = trim(strip_tags($m[2][$idx]));
+                        if (empty($label) || strpos(strtolower($label), 'app') !== false) continue;
+                        
+                        $qualityLabel = "Download Media";
+                        if (strpos(strtolower($label), 'hd') !== false) {
+                            $qualityLabel = "Download (HD)";
+                        } elseif (strpos(strtolower($label), 'sd') !== false) {
+                            $qualityLabel = "Download (SD)";
+                        } else {
+                            $qualityLabel = "Download Option " . (count($fbLinks) + 1);
+                        }
+
+                        $fbLinks[] = [
+                            'url' => html_entity_decode($linkUrl),
+                            'format' => 'mp4',
+                            'label' => $qualityLabel
+                        ];
+                    }
+                }
+
+                if (!empty($fbLinks)) {
+                    $realData = [
+                        'title' => $fbTitle ?: 'Facebook Video',
+                        'thumbnail' => $fbThumbnail,
+                        'duration' => '--',
+                        'size' => '--',
+                        'platform' => 'Facebook',
+                        'links' => $fbLinks
+                    ];
+                }
+            }
+        }
+        
         // General fallback for all social media platforms
         if (!$realData) {
             $apiEndpoints = [
