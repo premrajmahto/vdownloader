@@ -241,63 +241,166 @@ if (!$realData) {
         
         // Fallback for Facebook URLs
         if ($platform === 'Facebook' && !$realData) {
-            $ch = curl_init("https://getmyfb.com/process");
+            // Attempt A: SnapSave API with pure PHP JS decoder (returns direct fbcdn.net MP4 URLs)
+            $ch = curl_init('https://snapsave.app/action.php?lang=en');
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 8);
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 8);
             curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
                 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'X-Requested-With: XMLHttpRequest',
-                'Origin: https://getmyfb.com',
-                'Referer: https://getmyfb.com/'
+                'Origin: https://snapsave.app',
+                'Referer: https://snapsave.app/'
             ]);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, "id=" . urlencode($url) . "&locale=en");
-            $fbHtml = @curl_exec($ch);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query(['url' => $url]));
+            $snapRes = @curl_exec($ch);
             curl_close($ch);
 
-            if ($fbHtml) {
-                $fbLinks = [];
-                $fbTitle = "Facebook Video";
-                $fbThumbnail = "assets/images/placeholder.jpg";
-
-                if (preg_match('/<h4[^>]*class=["\']results-list-item-title["\'][^>]*>(.*?)<\/h4>/is', $fbHtml, $m)) {
-                    $fbTitle = trim(strip_tags(html_entity_decode($m[1])));
-                }
-                if (preg_match('/<img[^>]+src=["\']([^"\'\s]+)["\']/', $fbHtml, $m)) {
-                    $fbThumbnail = html_entity_decode($m[1]);
-                }
+            if ($snapRes && preg_match('/eval\(function\(h,u,n,t,e,r\)\{.*?\}\s*\(\s*["\'](.*?)["\']\s*,\s*(\d+)\s*,\s*["\'](.*?)["\']\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/s', $snapRes, $m)) {
+                $h_str = $m[1];
+                $u_val = (int)$m[2];
+                $n_str = $m[3];
+                $t_val = (int)$m[4];
+                $e_val = (int)$m[5];
+                $baseStr = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/";
                 
-                if (preg_match_all('/<li[^>]*class=["\']results-list-item(?:\s+[^"\']*)?["\'][^>]*>(.*?)<a[^>]+href=["\']([^"\'\s]+)["\'][^>]*>(.*?)<\/a>/is', $fbHtml, $m)) {
-                    foreach ($m[2] as $idx => $linkUrl) {
-                        $itemContent = $m[1][$idx];
-                        if (strpos($itemContent, 'install-app') !== false) continue;
-                        
-                        $qualityLabel = "Download Media";
-                        if (preg_match('/(\d+p\s*\([^)]+\)|\d+p|HD|SD|Mp3)/i', $itemContent, $qm)) {
-                            $qualityLabel = "Download (" . trim($qm[1]) . ")";
-                        } else {
-                            $qualityLabel = "Download Option " . (count($fbLinks) + 1);
-                        }
+                $decodeNum = function($d, $e, $f) use ($baseStr) {
+                    $h_chars = substr($baseStr, 0, $e);
+                    $i_chars = substr($baseStr, 0, $f);
+                    $j = 0;
+                    $d_arr = str_split(strrev($d));
+                    foreach ($d_arr as $c => $b) {
+                        $pos = strpos($h_chars, $b);
+                        if ($pos !== false) $j += $pos * pow($e, $c);
+                    }
+                    $k = "";
+                    while ($j > 0) {
+                        $k = $i_chars[$j % $f] . $k;
+                        $j = intval(($j - ($j % $f)) / $f);
+                    }
+                    return $k ?: "0";
+                };
 
-                        $fbLinks[] = [
-                            'url' => html_entity_decode($linkUrl),
-                            'format' => (strpos(strtolower($qualityLabel), 'mp3') !== false) ? 'mp3' : 'mp4',
-                            'label' => $qualityLabel
+                $r_str = "";
+                $len = strlen($h_str);
+                $n_arr = str_split($n_str);
+                $delimiter = $n_str[$e_val] ?? '';
+                for ($i = 0; $i < $len; $i++) {
+                    $s_chunk = "";
+                    while ($i < $len && $h_str[$i] !== $delimiter) {
+                        $s_chunk .= $h_str[$i];
+                        $i++;
+                    }
+                    for ($j = 0; $j < count($n_arr); $j++) {
+                        $s_chunk = str_replace($n_arr[$j], (string)$j, $s_chunk);
+                    }
+                    $val = (int)$decodeNum($s_chunk, $e_val, 10) - $t_val;
+                    if ($val > 0) $r_str .= chr($val);
+                }
+
+                $decoded = urldecode($r_str);
+                if ($decoded) {
+                    $clean = str_replace('\\/', '/', $decoded);
+                    $snapTitle = "Facebook Video";
+                    if (preg_match('/<p[^>]*class=["\']video-des["\'][^>]*>(.*?)<\/p>/is', $clean, $tm)) {
+                        $snapTitle = trim(strip_tags($tm[1]));
+                    }
+                    $snapThumb = "assets/images/placeholder.jpg";
+                    if (preg_match('/<img[^>]+src=["\']([^"\'\s]+)["\']/', $clean, $im)) {
+                        $snapThumb = $im[1];
+                    }
+                    $snapLinks = [];
+                    if (preg_match_all('/<tr>(.*?)<\/tr>/is', $clean, $trMatches)) {
+                        foreach ($trMatches[1] as $tr) {
+                            $quality = "Media";
+                            if (preg_match('/<td[^>]*class=["\']video-quality["\'][^>]*>(.*?)<\/td>/is', $tr, $qm)) {
+                                $quality = trim(strip_tags($qm[1]));
+                            }
+                            if (preg_match('/<a[^>]+href=["\']([^"\'\s]+)["\'][^>]*>/is', $tr, $lm)) {
+                                $vUrl = html_entity_decode($lm[1]);
+                                if (strpos($vUrl, 'http') === 0 && strpos(strtolower($tr), 'app') === false) {
+                                    $snapLinks[] = [
+                                        'url' => $vUrl,
+                                        'format' => (strpos(strtolower($quality), 'mp3') !== false) ? 'mp3' : 'mp4',
+                                        'label' => "Download ($quality)"
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                    if (!empty($snapLinks)) {
+                        $realData = [
+                            'title' => $snapTitle,
+                            'thumbnail' => $snapThumb,
+                            'duration' => '--',
+                            'size' => '--',
+                            'platform' => 'Facebook',
+                            'links' => $snapLinks
                         ];
                     }
                 }
+            }
 
-                if (!empty($fbLinks)) {
-                    $realData = [
-                        'title' => $fbTitle ?: 'Facebook Video',
-                        'thumbnail' => $fbThumbnail,
-                        'duration' => '--',
-                        'size' => '--',
-                        'platform' => 'Facebook',
-                        'links' => $fbLinks
-                    ];
+            // Attempt B: GetMyFB API fallback if SnapSave returned no links
+            if (!$realData) {
+                $ch = curl_init("https://getmyfb.com/process");
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                    'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
+                    'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'X-Requested-With: XMLHttpRequest',
+                    'Origin: https://getmyfb.com',
+                    'Referer: https://getmyfb.com/'
+                ]);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, "id=" . urlencode($url) . "&locale=en");
+                $fbHtml = @curl_exec($ch);
+                curl_close($ch);
+
+                if ($fbHtml) {
+                    $fbLinks = [];
+                    $fbTitle = "Facebook Video";
+                    $fbThumbnail = "assets/images/placeholder.jpg";
+
+                    if (preg_match('/<h4[^>]*class=["\']results-list-item-title["\'][^>]*>(.*?)<\/h4>/is', $fbHtml, $m)) {
+                        $fbTitle = trim(strip_tags(html_entity_decode($m[1])));
+                    }
+                    if (preg_match('/<img[^>]+src=["\']([^"\'\s]+)["\']/', $fbHtml, $m)) {
+                        $fbThumbnail = html_entity_decode($m[1]);
+                    }
+                    
+                    if (preg_match_all('/<li[^>]*class=["\']results-list-item(?:\s+[^"\']*)?["\'][^>]*>(.*?)<a[^>]+href=["\']([^"\'\s]+)["\'][^>]*>(.*?)<\/a>/is', $fbHtml, $m)) {
+                        foreach ($m[2] as $idx => $linkUrl) {
+                            $itemContent = $m[1][$idx];
+                            if (strpos($itemContent, 'install-app') !== false) continue;
+                            
+                            $qualityLabel = "Download Media";
+                            if (preg_match('/(\d+p\s*\([^)]+\)|\d+p|HD|SD|Mp3)/i', $itemContent, $qm)) {
+                                $qualityLabel = "Download (" . trim($qm[1]) . ")";
+                            } else {
+                                $qualityLabel = "Download Option " . (count($fbLinks) + 1);
+                            }
+
+                            $fbLinks[] = [
+                                'url' => html_entity_decode($linkUrl),
+                                'format' => (strpos(strtolower($qualityLabel), 'mp3') !== false) ? 'mp3' : 'mp4',
+                                'label' => $qualityLabel
+                            ];
+                        }
+                    }
+
+                    if (!empty($fbLinks)) {
+                        $realData = [
+                            'title' => $fbTitle ?: 'Facebook Video',
+                            'thumbnail' => $fbThumbnail,
+                            'duration' => '--',
+                            'size' => '--',
+                            'platform' => 'Facebook',
+                            'links' => $fbLinks
+                        ];
+                    }
                 }
             }
         }

@@ -131,7 +131,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const a = document.createElement('a');
                 a.href = 'download.php?url=' + encodeURIComponent(link.url) + '&name=' + encodeURIComponent(data.title) + '&format=' + encodeURIComponent(link.format);
                 a.className = 'btn btn-outline-primary w-100 mb-2';
-                a.innerHTML = `<i class="fas fa-download"></i> Download ${link.label}`;
+                
+                let labelText = (link.label || 'Media').trim();
+                if (/^download\s+/i.test(labelText)) {
+                    labelText = labelText.replace(/^download\s+/i, '');
+                }
+                
+                a.innerHTML = `<i class="fas fa-download"></i> Download ${labelText}`;
                 a.target = '_blank';
                 linksContainer.appendChild(a);
             });
