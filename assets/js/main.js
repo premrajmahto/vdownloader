@@ -76,8 +76,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(videoUrl))
                     .then(res => res.json())
                     .then(resData => {
-                        loader.style.display = 'none';
                         if (resData && resData.code === 0 && resData.data) {
+                            loader.style.display = 'none';
                             const d = resData.data;
                             let links = [];
                             if (d.play) links.push({ url: d.play, format: 'mp4', label: 'Download (No Watermark)' });
@@ -105,7 +105,34 @@ document.addEventListener('DOMContentLoaded', () => {
                                 return;
                             }
                         }
-                        showFinalError(failMessage);
+                        
+                        // Fallback 1b: Instagram oEmbed Client Fallback
+                        if (lowerUrl.includes('instagram.com')) {
+                            fetch('https://api.instagram.com/oembed/?url=' + encodeURIComponent(videoUrl))
+                            .then(r => r.json())
+                            .then(oData => {
+                                loader.style.display = 'none';
+                                if (oData && oData.thumbnail_url) {
+                                    showResult({
+                                        title: oData.title || 'Instagram Media',
+                                        thumbnail: oData.thumbnail_url,
+                                        duration: '--',
+                                        size: '--',
+                                        platform: 'Instagram',
+                                        links: [
+                                            { url: oData.thumbnail_url, format: 'jpg', label: 'Download Thumbnail / Cover' }
+                                        ]
+                                    });
+                                    return;
+                                }
+                                showFinalError(failMessage);
+                            })
+                            .catch(() => {
+                                showFinalError(failMessage);
+                            });
+                        } else {
+                            showFinalError(failMessage);
+                        }
                     })
                     .catch(() => {
                         showFinalError(failMessage);

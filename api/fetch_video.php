@@ -332,7 +332,73 @@ if (!$realData && function_exists('curl_init')) {
         }
     }
 
-    // C. YouTube Fallback
+    // C. Instagram Direct Scraper & oEmbed Fallbacks
+    if ($platform === 'Instagram' && !$realData) {
+        $igTitle = "Instagram Reel";
+        $igThumb = "assets/images/placeholder.jpg";
+        $igLinks = [];
+
+        // Attempt C1: Instagram oEmbed for metadata
+        $oembedRes = curl_request("https://api.instagram.com/oembed/?url=" . urlencode($url));
+        if ($oembedRes) {
+            $oJson = json_decode($oembedRes, true);
+            if (!empty($oJson['title'])) $igTitle = $oJson['title'];
+            if (!empty($oJson['thumbnail_url'])) $igThumb = $oJson['thumbnail_url'];
+        }
+
+        // Attempt C2: Direct Crawl using Crawler User Agent
+        $igHtml = curl_request($url, 'GET', null, [
+            'User-Agent: facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)'
+        ], 6);
+
+        if ($igHtml) {
+            if (preg_match('/<meta\s+property=["\']og:title["\']\s+content=["\']([^"\'\s]+)["\']/i', $igHtml, $m)) {
+                $igTitle = html_entity_decode($m[1]);
+            }
+            if (preg_match('/<meta\s+property=["\']og:image["\']\s+content=["\']([^"\'\s]+)["\']/i', $igHtml, $m)) {
+                $igThumb = html_entity_decode($m[1]);
+            }
+
+            if (preg_match_all('/<meta\s+property=["\']og:video(?::url)?["\']\s+content=["\']([^"\'\s]+)["\']/i', $igHtml, $m)) {
+                foreach ($m[1] as $vUrl) {
+                    $igLinks[] = ['url' => html_entity_decode($vUrl), 'format' => 'mp4', 'label' => 'Download Reel (MP4)'];
+                }
+            }
+
+            if (empty($igLinks)) {
+                if (preg_match_all('/"(?:video_url|video_versions)"\s*:\s*\[?\s*\{\s*"[^"]*"\s*:\s*[^,]+,\s*"url"\s*:\s*"([^"]+)"/i', $igHtml, $m)) {
+                    foreach (array_unique($m[1]) as $idx => $vUrl) {
+                        $cleanUrl = str_replace(['\/', '\\u00253D', '\\u0026'], ['/', '=', '&'], $vUrl);
+                        if (strpos($cleanUrl, 'http') === 0) {
+                            $igLinks[] = ['url' => $cleanUrl, 'format' => 'mp4', 'label' => 'Download Reel Option ' . ($idx + 1)];
+                        }
+                    }
+                }
+            }
+
+            if (empty($igLinks)) {
+                if (preg_match_all('/https?:\\\\\/\\\\\/[^\s"\'<>]*(?:scontent|fbcdn)[^\s"\'<>]+\.mp4[^\s"\'<>]*/i', $igHtml, $m)) {
+                    foreach (array_unique($m[0]) as $idx => $vUrl) {
+                        $cleanUrl = str_replace(['\/', '\\u00253D', '\\u0026'], ['/', '=', '&'], $vUrl);
+                        $igLinks[] = ['url' => $cleanUrl, 'format' => 'mp4', 'label' => 'Download Reel Video ' . ($idx + 1)];
+                    }
+                }
+            }
+        }
+
+        if (!empty($igLinks)) {
+            $realData = [
+                'title' => $igTitle,
+                'thumbnail' => $igThumb,
+                'duration' => '--',
+                'size' => '--',
+                'platform' => 'Instagram',
+                'links' => $igLinks
+            ];
+        }
+    }
+
+    // D. YouTube Fallback
     if ($platform === 'YouTube' && !$realData) {
         if (preg_match('/(?:v=|\/embed\/|\/1\/|\/v\/|https?:\/\/youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/', $url, $m)) {
             $videoId = $m[1];
@@ -388,37 +454,6 @@ if (!$realData && function_exists('curl_init')) {
                     'size' => '--',
                     'platform' => 'YouTube',
                     'links' => $links
-                ];
-            }
-        }
-    }
-
-    // D. Instagram Direct Metadata Scrape
-    if ($platform === 'Instagram' && !$realData) {
-        $igHtml = curl_request($url, 'GET', null, [
-            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        ], 5);
-        if ($igHtml) {
-            $igTitle = "Instagram Video";
-            $igThumb = "assets/images/placeholder.jpg";
-            $igVideo = null;
-            if (preg_match('/<meta\s+property=["\']og:title["\']\s+content=["\']([^"\'\s]+)["\']/i', $igHtml, $m)) {
-                $igTitle = html_entity_decode($m[1]);
-            }
-            if (preg_match('/<meta\s+property=["\']og:image["\']\s+content=["\']([^"\'\s]+)["\']/i', $igHtml, $m)) {
-                $igThumb = html_entity_decode($m[1]);
-            }
-            if (preg_match('/<meta\s+property=["\']og:video(?::url)?["\']\s+content=["\']([^"\'\s]+)["\']/i', $igHtml, $m)) {
-                $igVideo = html_entity_decode($m[1]);
-            }
-            if ($igVideo) {
-                $realData = [
-                    'title' => $igTitle,
-                    'thumbnail' => $igThumb,
-                    'duration' => '--',
-                    'size' => '--',
-                    'platform' => 'Instagram',
-                    'links' => [['url' => $igVideo, 'format' => 'mp4', 'label' => 'Download MP4']]
                 ];
             }
         }
