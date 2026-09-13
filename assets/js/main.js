@@ -320,7 +320,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if(data.links && data.links.length > 0) {
             data.links.forEach(link => {
                 const a = document.createElement('a');
-                if (link.isDirect) {
+                
+                const lowerUrl = (link.url || '').toLowerCase();
+                const isDirectDomain = link.isDirect || 
+                    lowerUrl.includes('savenow.to') || 
+                    lowerUrl.includes('affadaffa') || 
+                    lowerUrl.includes('tikwm.com') || 
+                    lowerUrl.includes('googlevideo.com') ||
+                    lowerUrl.includes('fbcdn.net') ||
+                    lowerUrl.includes('cdninstagram.com') ||
+                    lowerUrl.includes('ssscdn.io');
+
+                if (isDirectDomain) {
                     a.href = link.url;
                     a.target = '_blank';
                     a.rel = 'noopener noreferrer';
