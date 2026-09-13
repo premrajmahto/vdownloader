@@ -55,62 +55,134 @@ document.addEventListener('DOMContentLoaded', () => {
                 return response.json();
             })
             .then(data => {
-                loader.style.display = 'none';
-                if (data.success) {
+                if (data.success && data.data && data.data.links && data.data.links.length > 0) {
+                    loader.style.display = 'none';
                     showResult(data.data);
                 } else {
-                    alert(data.message || 'Unable to fetch video. The media might be private or blocked.');
+                    console.log('Backend returned no direct links, attempting client-side fallback...');
+                    attemptClientSideFallback(url, data.message);
                 }
             })
             .catch(error => {
-                console.warn('Backend fetch failed, attempting client fallback...', error);
-                fallbackCobalt(url);
+                console.warn('Backend fetch error, attempting client fallback...', error);
+                attemptClientSideFallback(url);
             });
             
-            function fallbackCobalt(videoUrl) {
-                fetch('https://api.cobalt.tools/', {
-                    method: 'POST',
-                    headers: {
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ url: videoUrl })
-                })
-                .then(res => {
-                    if (!res.ok) throw new Error("API rate limited or blocked");
-                    return res.json();
-                })
-                .then(data => {
+            function attemptClientSideFallback(videoUrl, failMessage) {
+                const lowerUrl = videoUrl.toLowerCase();
+
+                // 1. TikTok or Instagram via Tikwm Client API
+                if (lowerUrl.includes('tiktok.com') || lowerUrl.includes('instagram.com')) {
+                    fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(videoUrl))
+                    .then(res => res.json())
+                    .then(resData => {
+                        loader.style.display = 'none';
+                        if (resData && resData.code === 0 && resData.data) {
+                            const d = resData.data;
+                            let links = [];
+                            if (d.play) links.push({ url: d.play, format: 'mp4', label: 'Download (No Watermark)' });
+                            if (d.wmplay) links.push({ url: d.wmplay, format: 'mp4', label: 'Download (Watermark)' });
+                            if (d.music) links.push({ url: d.music, format: 'mp3', label: 'Download Audio (MP3)' });
+                            if (d.images && Array.isArray(d.images)) {
+                                d.images.forEach((img, i) => {
+                                    links.push({ url: img, format: 'jpg', label: 'Download Photo ' + (i + 1) });
+                                });
+                            }
+                            if (links.length > 0) {
+                                showResult({
+                                    title: d.title || 'Social Media Video',
+                                    thumbnail: d.cover || d.origin_cover || 'assets/images/placeholder.jpg',
+                                    duration: d.duration ? d.duration + 's' : '--',
+                                    size: '--',
+                                    platform: lowerUrl.includes('tiktok.com') ? 'TikTok' : 'Instagram',
+                                    links: links
+                                });
+                                return;
+                            }
+                        }
+                        showFinalError(failMessage);
+                    })
+                    .catch(err => {
+                        showFinalError(failMessage);
+                    });
+                    return;
+                }
+
+                // 2. YouTube via oEmbed & Piped / Invidious Client API
+                const ytMatch = videoUrl.match(/(?:v=|\/embed\/|\/1\/|\/v\/|https?:\/\/youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
+                if (ytMatch) {
+                    const videoId = ytMatch[1];
+                    fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(videoUrl)}&format=json`)
+                    .then(r => r.json())
+                    .then(meta => {
+                        // Fetch Piped streams
+                        fetch(`https://pipedapi.lunar.icu/streams/${videoId}`)
+                        .then(r => r.json())
+                        .then(piped => {
+                            loader.style.display = 'none';
+                            let links = [];
+                            if (piped && piped.audioVideoFiles) {
+                                piped.audioVideoFiles.forEach(f => {
+                                    links.push({
+                                        url: f.url,
+                                        format: f.mimeType && f.mimeType.includes('mp4') ? 'mp4' : 'webm',
+                                        label: `Download (${f.quality || 'Video'})`
+                                    });
+                                });
+                            }
+                            if (links.length > 0) {
+                                showResult({
+                                    title: meta.title || piped.title || 'YouTube Video',
+                                    thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+                                    duration: piped.duration ? piped.duration + 's' : '--',
+                                    size: '--',
+                                    platform: 'YouTube',
+                                    links: links.slice(0, 10)
+                                });
+                            } else {
+                                showFinalError(failMessage);
+                            }
+                        })
+                        .catch(() => {
+                            showFinalError(failMessage);
+                        });
+                    })
+                    .catch(() => {
+                        showFinalError(failMessage);
+                    });
+                    return;
+                }
+
+                // 3. Fallback for other platforms via Tikwm or default error
+                fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(videoUrl))
+                .then(r => r.json())
+                .then(resData => {
                     loader.style.display = 'none';
-                    if (data && data.status) {
+                    if (resData && resData.code === 0 && resData.data && (resData.data.play || resData.data.wmplay)) {
+                        const d = resData.data;
                         let links = [];
-                        if (data.status === 'stream' || data.status === 'redirect') {
-                            links.push({ url: data.url, format: 'mp4', label: 'Download Media' });
-                        } else if (data.status === 'picker') {
-                            data.picker.forEach((item, i) => {
-                                links.push({ url: item.url || item, format: 'mp4', label: 'Download ' + (i+1) });
-                            });
-                        }
-                        
-                        if (links.length > 0) {
-                            showResult({
-                                title: 'Social Media Video',
-                                thumbnail: 'assets/images/placeholder.jpg',
-                                duration: '--',
-                                size: '--',
-                                platform: 'Extracted Download',
-                                links: links
-                            });
-                            return;
-                        }
+                        if (d.play) links.push({ url: d.play, format: 'mp4', label: 'Download Media' });
+                        if (d.music) links.push({ url: d.music, format: 'mp3', label: 'Download Audio' });
+                        showResult({
+                            title: d.title || 'Social Video',
+                            thumbnail: d.cover || 'assets/images/placeholder.jpg',
+                            duration: d.duration ? d.duration + 's' : '--',
+                            size: '--',
+                            platform: 'Social Media',
+                            links: links
+                        });
+                    } else {
+                        showFinalError(failMessage);
                     }
-                    alert('Unable to fetch video. The media might be private, blocked, or not supported.');
                 })
-                .catch(err => {
-                    loader.style.display = 'none';
-                    console.error("Client fallback error:", err);
-                    alert('Unable to fetch video. Please ensure the link is public and valid.');
+                .catch(() => {
+                    showFinalError(failMessage);
                 });
+            }
+
+            function showFinalError(msg) {
+                loader.style.display = 'none';
+                alert(msg || 'Unable to fetch video. The media might be private, blocked, or the server is restricting execution.');
             }
         });
     }

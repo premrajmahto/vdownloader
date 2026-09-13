@@ -75,18 +75,49 @@ if (!function_exists('run_cmd')) {
     }
 }
 
-// Attempt 1: Try local yt-dlp if it's available (Support both Windows and Linux OS)
+if (!function_exists('curl_request')) {
+    function curl_request($targetUrl, $method = 'GET', $postData = null, $customHeaders = [], $timeout = 7) {
+        if (!function_exists('curl_init')) return false;
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $targetUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        if (defined('CURL_IPRESOLVE_V4')) {
+            curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        }
+        curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 4);
+        
+        $headers = array_merge([
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+        ], $customHeaders);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+        if ($method === 'POST') {
+            curl_setopt($ch, CURLOPT_POST, true);
+            if ($postData !== null) {
+                curl_setopt($ch, CURLOPT_POSTFIELDS, is_array($postData) ? http_build_query($postData) : $postData);
+            }
+        }
+
+        $res = curl_exec($ch);
+        curl_close($ch);
+        return $res;
+    }
+}
+
+// Attempt 1: Try local yt-dlp if available
 $isWin = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
 $ytFilename = $isWin ? 'yt-dlp.exe' : 'yt-dlp';
 $ytDlpExe = __DIR__ . '/' . $ytFilename;
 
 if (file_exists($ytDlpExe)) {
-    // For linux, try to make it executable if it lost permissions in FTP
     if (!$isWin && !is_executable($ytDlpExe)) {
         @chmod($ytDlpExe, 0755);
     }
     
-    // Command
     $extraArgs = ($platform === 'YouTube') ? ' --extractor-args "youtube:player_client=android"' : '';
     $cmd = escapeshellarg($ytDlpExe) . " --no-playlist --no-warnings{$extraArgs} --dump-json " . escapeshellarg($url);
     $output = run_cmd($cmd);
@@ -159,31 +190,65 @@ if (file_exists($ytDlpExe)) {
                     'duration' => $durationFormat,
                     'size' => $sizeFormat,
                     'platform' => $platform,
-                    'links' => array_slice($links, 0, 10) // Limit to top 10 options
+                    'links' => array_slice($links, 0, 10)
                 ];
             }
         }
     }
 }
 
-// Attempt 2: Fallback to external REST APIs (essential for shared live servers like Hostinger)
-if (!$realData) {
-    if (function_exists('curl_init')) {
-        // Fallback for YouTube URLs via Invidious / oEmbed
-        if ($platform === 'YouTube' && preg_match('/(?:v=|\/embed\/|\/1\/|\/v\/|https?:\/\/youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/', $url, $m)) {
+// Attempt 2: REST APIs & Scrapers Fallback (Essential for shared live hosts like Hostinger)
+if (!$realData && function_exists('curl_init')) {
+
+    // A. TikTok & Instagram via Tikwm API
+    if (($platform === 'TikTok' || $platform === 'Instagram') && !$realData) {
+        $tikwmRes = curl_request("https://www.tikwm.com/api/?url=" . urlencode($url));
+        if ($tikwmRes) {
+            $json = json_decode($tikwmRes, true);
+            if ($json && isset($json['code']) && $json['code'] === 0 && isset($json['data'])) {
+                $d = $json['data'];
+                $title = $d['title'] ?? ($platform . ' Video');
+                $thumb = $d['cover'] ?? ($d['origin_cover'] ?? 'assets/images/placeholder.jpg');
+                $dur = isset($d['duration']) ? gmdate("H:i:s", (int)$d['duration']) : '--';
+                
+                $links = [];
+                if (!empty($d['play'])) {
+                    $links[] = ['url' => $d['play'], 'format' => 'mp4', 'label' => 'Download (No Watermark)'];
+                }
+                if (!empty($d['wmplay'])) {
+                    $links[] = ['url' => $d['wmplay'], 'format' => 'mp4', 'label' => 'Download (Watermark)'];
+                }
+                if (!empty($d['music'])) {
+                    $links[] = ['url' => $d['music'], 'format' => 'mp3', 'label' => 'Download Audio (MP3)'];
+                }
+                if (!empty($d['images']) && is_array($d['images'])) {
+                    foreach ($d['images'] as $idx => $imgUrl) {
+                        $links[] = ['url' => $imgUrl, 'format' => 'jpg', 'label' => 'Download Photo ' . ($idx + 1)];
+                    }
+                }
+                
+                if (!empty($links)) {
+                    $realData = [
+                        'title' => $title,
+                        'thumbnail' => $thumb,
+                        'duration' => $dur,
+                        'size' => '--',
+                        'platform' => $platform,
+                        'links' => $links
+                    ];
+                }
+            }
+        }
+    }
+
+    // B. YouTube Fallback
+    if ($platform === 'YouTube' && !$realData) {
+        if (preg_match('/(?:v=|\/embed\/|\/1\/|\/v\/|https?:\/\/youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/', $url, $m)) {
             $videoId = $m[1];
             $title = "YouTube Video";
             $thumbnail = "https://i.ytimg.com/vi/$videoId/maxresdefault.jpg";
             
-            $oembedUrl = "https://www.youtube.com/oembed?url=" . urlencode($url) . "&format=json";
-            $ch = curl_init($oembedUrl);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 4);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
-            $oembedRes = @curl_exec($ch);
-            curl_close($ch);
-            
+            $oembedRes = curl_request("https://www.youtube.com/oembed?url=" . urlencode($url) . "&format=json");
             if ($oembedRes) {
                 $oembedData = json_decode($oembedRes, true);
                 if (isset($oembedData['title'])) $title = $oembedData['title'];
@@ -191,24 +256,17 @@ if (!$realData) {
             }
             
             $invidiousInstances = [
+                "https://invidious.projectsegfau.lt/api/v1/videos/$videoId",
+                "https://invidious.flokinet.to/api/v1/videos/$videoId",
                 "https://invidious.nerdvpn.de/api/v1/videos/$videoId",
-                "https://inv.tux.pizza/api/v1/videos/$videoId",
-                "https://invidious.drgns.space/api/v1/videos/$videoId",
-                "https://invidious.flokinet.to/api/v1/videos/$videoId"
+                "https://inv.tux.pizza/api/v1/videos/$videoId"
             ];
             
             $links = [];
             $durationFormat = '--';
             
             foreach ($invidiousInstances as $inst) {
-                $ch = curl_init($inst);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 6);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
-                $res = @curl_exec($ch);
-                curl_close($ch);
-                
+                $res = curl_request($inst, 'GET', null, [], 5);
                 if ($res) {
                     $json = json_decode($res, true);
                     if ($json && isset($json['formatStreams'])) {
@@ -242,31 +300,58 @@ if (!$realData) {
                 ];
             }
         }
-        
-        // Fallback for Facebook URLs
-        if ($platform === 'Facebook' && !$realData) {
-            // Attempt A: SnapSave API with pure PHP JS decoder (returns direct fbcdn.net MP4 URLs)
-            $ch = curl_init('https://snapsave.app/action.php?lang=en');
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 4);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    }
+
+    // C. Facebook Fallback
+    if ($platform === 'Facebook' && !$realData) {
+        // Direct HTML Parsing for Facebook
+        $fbHtml = curl_request($url, 'GET', null, [
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+        ], 6);
+
+        if ($fbHtml) {
+            $fbTitle = "Facebook Video";
+            $fbThumb = "assets/images/placeholder.jpg";
+            $fbLinks = [];
+
+            if (preg_match('/<meta\s+property=["\']og:title["\']\s+content=["\']([^"\'\s]+)["\']/i', $fbHtml, $m)) {
+                $fbTitle = html_entity_decode($m[1]);
+            }
+            if (preg_match('/<meta\s+property=["\']og:image["\']\s+content=["\']([^"\'\s]+)["\']/i', $fbHtml, $m)) {
+                $fbThumb = html_entity_decode($m[1]);
+            }
+
+            if (preg_match_all('/(?:browser_native_hd_url|browser_native_sd_url|hd_src|sd_src)["\']\s*:\s*["\']([^"\'\s]+)["\']/i', $fbHtml, $m)) {
+                foreach ($m[1] as $idx => $vUrl) {
+                    $vUrl = str_replace(['\/', '\\u00253D', '\\u0026'], ['/', '=', '&'], $vUrl);
+                    if (strpos($vUrl, 'http') === 0) {
+                        $label = ($idx === 0) ? 'Download HD Video' : 'Download SD Video';
+                        $fbLinks[] = ['url' => $vUrl, 'format' => 'mp4', 'label' => $label];
+                    }
+                }
+            }
+
+            if (!empty($fbLinks)) {
+                $realData = [
+                    'title' => $fbTitle,
+                    'thumbnail' => $fbThumb,
+                    'duration' => '--',
+                    'size' => '--',
+                    'platform' => 'Facebook',
+                    'links' => $fbLinks
+                ];
+            }
+        }
+
+        // SnapSave API fallback
+        if (!$realData) {
+            $snapRes = curl_request('https://snapsave.app/action.php?lang=en', 'POST', ['url' => $url], [
                 'Origin: https://snapsave.app',
                 'Referer: https://snapsave.app/'
-            ]);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query(['url' => $url]));
-            $snapRes = @curl_exec($ch);
-            curl_close($ch);
+            ], 5);
 
             if ($snapRes && preg_match('/eval\(function\(h,u,n,t,e,r\)\{.*?\}\s*\(\s*["\'](.*?)["\']\s*,\s*(\d+)\s*,\s*["\'](.*?)["\']\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/s', $snapRes, $m)) {
-                $h_str = $m[1];
-                $u_val = (int)$m[2];
-                $n_str = $m[3];
-                $t_val = (int)$m[4];
-                $e_val = (int)$m[5];
+                $h_str = $m[1]; $u_val = (int)$m[2]; $n_str = $m[3]; $t_val = (int)$m[4]; $e_val = (int)$m[5];
                 $baseStr = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/";
                 
                 $decodeNum = function($d, $e, $f) use ($baseStr) {
@@ -345,136 +430,77 @@ if (!$realData) {
                     }
                 }
             }
+        }
+    }
 
-            // Attempt B: GetMyFB API fallback if SnapSave returned no links
-            if (!$realData) {
-                $ch = curl_init("https://getmyfb.com/process");
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_POST, true);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 4);
-                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
-                curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                    'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
-                    'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'X-Requested-With: XMLHttpRequest',
-                    'Origin: https://getmyfb.com',
-                    'Referer: https://getmyfb.com/'
-                ]);
-                curl_setopt($ch, CURLOPT_POSTFIELDS, "id=" . urlencode($url) . "&locale=en");
-                $fbHtml = @curl_exec($ch);
-                curl_close($ch);
-
-                if ($fbHtml) {
-                    $fbLinks = [];
-                    $fbTitle = "Facebook Video";
-                    $fbThumbnail = "assets/images/placeholder.jpg";
-
-                    if (preg_match('/<h4[^>]*class=["\']results-list-item-title["\'][^>]*>(.*?)<\/h4>/is', $fbHtml, $m)) {
-                        $fbTitle = trim(strip_tags(html_entity_decode($m[1])));
-                    }
-                    if (preg_match('/<img[^>]+src=["\']([^"\'\s]+)["\']/', $fbHtml, $m)) {
-                        $fbThumbnail = html_entity_decode($m[1]);
-                    }
-                    
-                    if (preg_match_all('/<li[^>]*class=["\']results-list-item(?:\s+[^"\']*)?["\'][^>]*>(.*?)<a[^>]+href=["\']([^"\'\s]+)["\'][^>]*>(.*?)<\/a>/is', $fbHtml, $m)) {
-                        foreach ($m[2] as $idx => $linkUrl) {
-                            $itemContent = $m[1][$idx];
-                            if (strpos($itemContent, 'install-app') !== false) continue;
-                            
-                            $qualityLabel = "Download Media";
-                            if (preg_match('/(\d+p\s*\([^)]+\)|\d+p|HD|SD|Mp3)/i', $itemContent, $qm)) {
-                                $qualityLabel = "Download (" . trim($qm[1]) . ")";
-                            } else {
-                                $qualityLabel = "Download Option " . (count($fbLinks) + 1);
-                            }
-
-                            $fbLinks[] = [
-                                'url' => html_entity_decode($linkUrl),
-                                'format' => (strpos(strtolower($qualityLabel), 'mp3') !== false) ? 'mp3' : 'mp4',
-                                'label' => $qualityLabel
-                            ];
-                        }
-                    }
-
-                    if (!empty($fbLinks)) {
-                        $realData = [
-                            'title' => $fbTitle ?: 'Facebook Video',
-                            'thumbnail' => $fbThumbnail,
-                            'duration' => '--',
-                            'size' => '--',
-                            'platform' => 'Facebook',
-                            'links' => $fbLinks
-                        ];
-                    }
-                }
+    // D. Instagram Direct Metadata Scrape
+    if ($platform === 'Instagram' && !$realData) {
+        $igHtml = curl_request($url, 'GET', null, [
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        ], 5);
+        if ($igHtml) {
+            $igTitle = "Instagram Video";
+            $igThumb = "assets/images/placeholder.jpg";
+            $igVideo = null;
+            if (preg_match('/<meta\s+property=["\']og:title["\']\s+content=["\']([^"\'\s]+)["\']/i', $igHtml, $m)) {
+                $igTitle = html_entity_decode($m[1]);
+            }
+            if (preg_match('/<meta\s+property=["\']og:image["\']\s+content=["\']([^"\'\s]+)["\']/i', $igHtml, $m)) {
+                $igThumb = html_entity_decode($m[1]);
+            }
+            if (preg_match('/<meta\s+property=["\']og:video(?::url)?["\']\s+content=["\']([^"\'\s]+)["\']/i', $igHtml, $m)) {
+                $igVideo = html_entity_decode($m[1]);
+            }
+            if ($igVideo) {
+                $realData = [
+                    'title' => $igTitle,
+                    'thumbnail' => $igThumb,
+                    'duration' => '--',
+                    'size' => '--',
+                    'platform' => 'Instagram',
+                    'links' => [['url' => $igVideo, 'format' => 'mp4', 'label' => 'Download MP4']]
+                ];
             }
         }
-        
-        // General fallback for all social media platforms
-        if (!$realData) {
-            $apiEndpoints = [
-                'https://api.cobalt.tools/',
-                'https://co.pussthecat.org/api/json'
-            ];
-            
-            foreach ($apiEndpoints as $apiEndpoint) {
-                $ch = curl_init($apiEndpoint);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_POST, true);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 6);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                    'Accept: application/json',
-                    'Content-Type: application/json',
-                    'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                ]);
-                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['url' => $url]));
-                
-                $apiResp = @curl_exec($ch);
-                curl_close($ch);
-            
-                if ($apiResp) {
-                    $apiJson = json_decode($apiResp, true);
-                    if ($apiJson && isset($apiJson['status']) && $apiJson['status'] !== 'error') {
-                        $links = [];
-                        
-                        if ($apiJson['status'] === 'stream' || $apiJson['status'] === 'redirect') {
-                            $links[] = [
-                                'url' => $apiJson['url'],
-                                'format' => 'mp4',
-                                'label' => 'Download Media'
-                            ];
-                        } elseif ($apiJson['status'] === 'picker') {
-                            foreach ($apiJson['picker'] as $index => $item) {
-                                 $links[] = [
-                                     'url' => $item['url'] ?? $item,
-                                     'format' => 'mp4',
-                                     'label' => 'Download ' . ($index + 1)
-                                 ];
-                            }
-                        }
-                        
-                        if (!empty($links)) {
-                            $realData = [
-                                'title' => 'Social Media Video',
-                                'thumbnail' => 'assets/images/placeholder.jpg',
-                                'duration' => '--',
-                                'size' => '--',
-                                'platform' => $platform,
-                                'links' => $links
-                            ];
-                            break;
-                        }
-                    }
-                }
+    }
+
+    // E. Twitter / Pinterest / Snapchat Metadata Scrape
+    if (in_array($platform, ['Twitter', 'Pinterest', 'Snapchat']) && !$realData) {
+        $metaHtml = curl_request($url, 'GET', null, [], 5);
+        if ($metaHtml) {
+            $mTitle = "$platform Media";
+            $mThumb = "assets/images/placeholder.jpg";
+            $mVideo = null;
+
+            if (preg_match('/<meta\s+property=["\']og:title["\']\s+content=["\']([^"\'\s]+)["\']/i', $metaHtml, $m)) {
+                $mTitle = html_entity_decode($m[1]);
+            }
+            if (preg_match('/<meta\s+property=["\']og:image["\']\s+content=["\']([^"\'\s]+)["\']/i', $metaHtml, $m)) {
+                $mThumb = html_entity_decode($m[1]);
+            }
+            if (preg_match('/<meta\s+property=["\']og:video(?::url)?["\']\s+content=["\']([^"\'\s]+)["\']/i', $metaHtml, $m)) {
+                $mVideo = html_entity_decode($m[1]);
+            }
+
+            if ($mVideo) {
+                $realData = [
+                    'title' => $mTitle,
+                    'thumbnail' => $mThumb,
+                    'duration' => '--',
+                    'size' => '--',
+                    'platform' => $platform,
+                    'links' => [['url' => $mVideo, 'format' => 'mp4', 'label' => 'Download Media']]
+                ];
             }
         }
     }
 }
 
 if (!$realData) {
-    echo json_encode(['success' => false, 'message' => 'Unable to fetch video. The media might be private, blocked, or the server is restricting execution.']);
+    echo json_encode([
+        'success' => false,
+        'message' => 'Unable to fetch video from server. Attempting client fallback...'
+    ]);
     exit;
 }
 
@@ -494,4 +520,3 @@ echo json_encode([
     'data' => $realData
 ]);
 exit;
-
