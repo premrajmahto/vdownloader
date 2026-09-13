@@ -99,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             while ((m = aRegex.exec(decodedHtml)) !== null) {
                                 let linkUrl = m[1].replace(/&amp;/g, '&');
                                 let btnText = m[2].replace(/<[^>]+>/g, '').trim();
-                                if (linkUrl.startsWith('http') && !linkUrl.toLowerCase().includes('snapsave') && !btnText.toLowerCase().includes('app')) {
+                                if (linkUrl.startsWith('http') && !linkUrl.toLowerCase().includes('snapsave') && !btnText.toLowerCase().includes('app') && !linkUrl.match(/\.(jpg|png|webp)(\?|$)/i)) {
                                     links.push({
                                         url: linkUrl,
                                         format: 'mp4',
@@ -239,28 +239,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             function fallbackIgOembed(videoUrl, failMessage) {
-                fetch('https://api.instagram.com/oembed/?url=' + encodeURIComponent(videoUrl))
-                .then(r => r.json())
-                .then(oData => {
-                    loader.style.display = 'none';
-                    if (oData && oData.thumbnail_url) {
-                        showResult({
-                            title: oData.title || 'Instagram Media',
-                            thumbnail: oData.thumbnail_url,
-                            duration: '--',
-                            size: '--',
-                            platform: 'Instagram',
-                            links: [
-                                { url: oData.thumbnail_url, format: 'jpg', label: 'Download Cover Photo' }
-                            ]
-                        });
-                        return;
-                    }
-                    showFinalError(failMessage);
-                })
-                .catch(() => {
-                    showFinalError(failMessage);
-                });
+                showFinalError(failMessage || "Unable to download video from this Instagram link. Please ensure the post or Reel is public and contains a video.");
             }
 
             function decodeSnapSaveJS(snapRes) {

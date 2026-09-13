@@ -200,8 +200,8 @@ if (file_exists($ytDlpExe)) {
 // Attempt 2: REST APIs & Scrapers Fallback (Essential for shared live hosts like Hostinger)
 if (!$realData && function_exists('curl_init')) {
 
-    // A. Facebook & Instagram via GetMyFB API (Supports Reels, Posts & Videos)
-    if (($platform === 'Facebook' || $platform === 'Instagram') && !$realData) {
+    // A. Facebook via GetMyFB API (Supports Reels, Posts & Videos)
+    if ($platform === 'Facebook' && !$realData) {
         $fbRes = curl_request("https://getmyfb.com/process", 'POST', "id=" . urlencode($url) . "&locale=en", [
             'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
             'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -211,7 +211,7 @@ if (!$realData && function_exists('curl_init')) {
         ], 8);
 
         if ($fbRes) {
-            $fbTitle = $platform . " Media";
+            $fbTitle = "Facebook Media";
             $fbThumb = "assets/images/placeholder.jpg";
             $fbLinks = [];
 
@@ -238,11 +238,11 @@ if (!$realData && function_exists('curl_init')) {
 
             if (!empty($fbLinks)) {
                 $realData = [
-                    'title' => $fbTitle ?: ($platform . ' Video'),
+                    'title' => $fbTitle ?: 'Facebook Video',
                     'thumbnail' => $fbThumb,
                     'duration' => '--',
                     'size' => '--',
-                    'platform' => $platform,
+                    'platform' => 'Facebook',
                     'links' => $fbLinks
                 ];
             }
@@ -417,6 +417,40 @@ if (!$realData && function_exists('curl_init')) {
                         'size' => '--',
                         'platform' => 'Instagram',
                         'links' => $eLinks
+                    ];
+                }
+            }
+        }
+
+        // Attempt C3: SaveInsta / SnapInsta REST API
+        if (!$realData) {
+            $siRes = curl_request("https://saveinsta.app/action2.php", 'POST', "url=" . urlencode($url) . "&action=post", [
+                'Content-Type: application/x-www-form-urlencoded',
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+                'Origin: https://saveinsta.app',
+                'Referer: https://saveinsta.app/'
+            ], 7);
+
+            if ($siRes && preg_match_all('/<a[^>]+href=["\']([^"\'\s]+(?:\.mp4|cdninstagram|fbcdn)[^"\'\s]*)["\']/i', $siRes, $m)) {
+                $siLinks = [];
+                foreach (array_unique($m[1]) as $idx => $vUrl) {
+                    $cleanUrl = html_entity_decode($vUrl);
+                    if (strpos($cleanUrl, 'http') === 0) {
+                        $siLinks[] = [
+                            'url' => $cleanUrl,
+                            'format' => 'mp4',
+                            'label' => 'Download Reel Option ' . ($idx + 1)
+                        ];
+                    }
+                }
+                if (!empty($siLinks)) {
+                    $realData = [
+                        'title' => 'Instagram Reel',
+                        'thumbnail' => 'assets/images/placeholder.jpg',
+                        'duration' => '--',
+                        'size' => '--',
+                        'platform' => 'Instagram',
+                        'links' => $siLinks
                     ];
                 }
             }
