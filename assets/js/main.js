@@ -71,8 +71,8 @@ document.addEventListener('DOMContentLoaded', () => {
             function attemptClientSideFallback(videoUrl, failMessage) {
                 const lowerUrl = videoUrl.toLowerCase();
 
-                // 1. TikTok or Instagram via Tikwm Client API
-                if (lowerUrl.includes('tiktok.com') || lowerUrl.includes('instagram.com')) {
+                // 1. TikTok, Instagram, or Facebook via Tikwm Client API
+                if (lowerUrl.includes('tiktok.com') || lowerUrl.includes('instagram.com') || lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch')) {
                     fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(videoUrl))
                     .then(res => res.json())
                     .then(resData => {
@@ -89,12 +89,17 @@ document.addEventListener('DOMContentLoaded', () => {
                                 });
                             }
                             if (links.length > 0) {
+                                let detectedPlatform = 'Social Media';
+                                if (lowerUrl.includes('tiktok.com')) detectedPlatform = 'TikTok';
+                                else if (lowerUrl.includes('instagram.com')) detectedPlatform = 'Instagram';
+                                else if (lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch')) detectedPlatform = 'Facebook';
+
                                 showResult({
-                                    title: d.title || 'Social Media Video',
+                                    title: d.title || (detectedPlatform + ' Video'),
                                     thumbnail: d.cover || d.origin_cover || 'assets/images/placeholder.jpg',
                                     duration: d.duration ? d.duration + 's' : '--',
                                     size: '--',
-                                    platform: lowerUrl.includes('tiktok.com') ? 'TikTok' : 'Instagram',
+                                    platform: detectedPlatform,
                                     links: links
                                 });
                                 return;
@@ -102,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                         showFinalError(failMessage);
                     })
-                    .catch(err => {
+                    .catch(() => {
                         showFinalError(failMessage);
                     });
                     return;
@@ -115,7 +120,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(videoUrl)}&format=json`)
                     .then(r => r.json())
                     .then(meta => {
-                        // Fetch Piped streams
                         fetch(`https://pipedapi.lunar.icu/streams/${videoId}`)
                         .then(r => r.json())
                         .then(piped => {
@@ -153,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                // 3. Fallback for other platforms via Tikwm or default error
+                // 3. General Fallback for Twitter / Pinterest / Snapchat
                 fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(videoUrl))
                 .then(r => r.json())
                 .then(resData => {
@@ -182,7 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             function showFinalError(msg) {
                 loader.style.display = 'none';
-                alert(msg || 'Unable to fetch video. The media might be private, blocked, or the server is restricting execution.');
+                alert(msg || 'Unable to fetch video. The media might be private, blocked, or not supported.');
             }
         });
     }

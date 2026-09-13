@@ -200,7 +200,98 @@ if (file_exists($ytDlpExe)) {
 // Attempt 2: REST APIs & Scrapers Fallback (Essential for shared live hosts like Hostinger)
 if (!$realData && function_exists('curl_init')) {
 
-    // A. TikTok & Instagram via Tikwm API
+    // A. Facebook Fallback (Reels, Videos, Watch, Share Links)
+    if ($platform === 'Facebook' && !$realData) {
+        // Attempt A1: GetMyFB API (Supports Reels & Videos)
+        $fbRes = curl_request("https://getmyfb.com/process", 'POST', "id=" . urlencode($url) . "&locale=en", [
+            'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'X-Requested-With: XMLHttpRequest',
+            'Origin: https://getmyfb.com',
+            'Referer: https://getmyfb.com/'
+        ], 8);
+
+        if ($fbRes) {
+            $fbTitle = "Facebook Video";
+            $fbThumb = "assets/images/placeholder.jpg";
+            $fbLinks = [];
+
+            if (preg_match('/<h4[^>]*class=["\']results-list-item-title["\'][^>]*>(.*?)<\/h4>/is', $fbRes, $m)) {
+                $fbTitle = trim(strip_tags(html_entity_decode($m[1])));
+            }
+            if (preg_match('/<img[^>]+src=["\']([^"\'\s]+)["\']/', $fbRes, $m)) {
+                $fbThumb = html_entity_decode($m[1]);
+            }
+
+            if (preg_match_all('/<a[^>]+href=["\']([^"\'\s]*ssscdn\.io[^"\'\s]*)["\']/i', $fbRes, $m)) {
+                foreach (array_unique($m[1]) as $idx => $linkUrl) {
+                    $cleanUrl = html_entity_decode($linkUrl);
+                    if (strpos($cleanUrl, 'http') === 0 && strpos($cleanUrl, 'play.google.com') === false) {
+                        $label = ($idx === 0) ? 'Download HD Video' : (($idx === 1) ? 'Download SD Video' : 'Download Option ' . ($idx + 1));
+                        $fbLinks[] = [
+                            'url' => $cleanUrl,
+                            'format' => 'mp4',
+                            'label' => $label
+                        ];
+                    }
+                }
+            }
+
+            if (!empty($fbLinks)) {
+                $realData = [
+                    'title' => $fbTitle ?: 'Facebook Video',
+                    'thumbnail' => $fbThumb,
+                    'duration' => '--',
+                    'size' => '--',
+                    'platform' => 'Facebook',
+                    'links' => $fbLinks
+                ];
+            }
+        }
+
+        // Attempt A2: Direct Crawl using Facebook External Hit User Agent
+        if (!$realData) {
+            $fbHtml = curl_request($url, 'GET', null, [
+                'User-Agent: facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)'
+            ], 6);
+
+            if ($fbHtml) {
+                $fbTitle = "Facebook Video";
+                $fbThumb = "assets/images/placeholder.jpg";
+                $fbLinks = [];
+
+                if (preg_match('/<meta\s+property=["\']og:title["\']\s+content=["\']([^"\'\s]+)["\']/i', $fbHtml, $m)) {
+                    $fbTitle = html_entity_decode($m[1]);
+                }
+                if (preg_match('/<meta\s+property=["\']og:image["\']\s+content=["\']([^"\'\s]+)["\']/i', $fbHtml, $m)) {
+                    $fbThumb = html_entity_decode($m[1]);
+                }
+
+                if (preg_match_all('/(?:browser_native_hd_url|browser_native_sd_url|hd_src|sd_src|playable_url|playable_url_quality_hd)["\']\s*:\s*["\']([^"\'\s]+)["\']/i', $fbHtml, $m)) {
+                    foreach ($m[1] as $idx => $vUrl) {
+                        $vUrl = str_replace(['\/', '\\u00253D', '\\u0026'], ['/', '=', '&'], $vUrl);
+                        if (strpos($vUrl, 'http') === 0) {
+                            $label = ($idx === 0) ? 'Download HD Video' : 'Download SD Video';
+                            $fbLinks[] = ['url' => $vUrl, 'format' => 'mp4', 'label' => $label];
+                        }
+                    }
+                }
+
+                if (!empty($fbLinks)) {
+                    $realData = [
+                        'title' => $fbTitle,
+                        'thumbnail' => $fbThumb,
+                        'duration' => '--',
+                        'size' => '--',
+                        'platform' => 'Facebook',
+                        'links' => $fbLinks
+                    ];
+                }
+            }
+        }
+    }
+
+    // B. TikTok & Instagram via Tikwm API
     if (($platform === 'TikTok' || $platform === 'Instagram') && !$realData) {
         $tikwmRes = curl_request("https://www.tikwm.com/api/?url=" . urlencode($url));
         if ($tikwmRes) {
@@ -241,7 +332,7 @@ if (!$realData && function_exists('curl_init')) {
         }
     }
 
-    // B. YouTube Fallback
+    // C. YouTube Fallback
     if ($platform === 'YouTube' && !$realData) {
         if (preg_match('/(?:v=|\/embed\/|\/1\/|\/v\/|https?:\/\/youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/', $url, $m)) {
             $videoId = $m[1];
@@ -298,137 +389,6 @@ if (!$realData && function_exists('curl_init')) {
                     'platform' => 'YouTube',
                     'links' => $links
                 ];
-            }
-        }
-    }
-
-    // C. Facebook Fallback
-    if ($platform === 'Facebook' && !$realData) {
-        // Direct HTML Parsing for Facebook
-        $fbHtml = curl_request($url, 'GET', null, [
-            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-        ], 6);
-
-        if ($fbHtml) {
-            $fbTitle = "Facebook Video";
-            $fbThumb = "assets/images/placeholder.jpg";
-            $fbLinks = [];
-
-            if (preg_match('/<meta\s+property=["\']og:title["\']\s+content=["\']([^"\'\s]+)["\']/i', $fbHtml, $m)) {
-                $fbTitle = html_entity_decode($m[1]);
-            }
-            if (preg_match('/<meta\s+property=["\']og:image["\']\s+content=["\']([^"\'\s]+)["\']/i', $fbHtml, $m)) {
-                $fbThumb = html_entity_decode($m[1]);
-            }
-
-            if (preg_match_all('/(?:browser_native_hd_url|browser_native_sd_url|hd_src|sd_src)["\']\s*:\s*["\']([^"\'\s]+)["\']/i', $fbHtml, $m)) {
-                foreach ($m[1] as $idx => $vUrl) {
-                    $vUrl = str_replace(['\/', '\\u00253D', '\\u0026'], ['/', '=', '&'], $vUrl);
-                    if (strpos($vUrl, 'http') === 0) {
-                        $label = ($idx === 0) ? 'Download HD Video' : 'Download SD Video';
-                        $fbLinks[] = ['url' => $vUrl, 'format' => 'mp4', 'label' => $label];
-                    }
-                }
-            }
-
-            if (!empty($fbLinks)) {
-                $realData = [
-                    'title' => $fbTitle,
-                    'thumbnail' => $fbThumb,
-                    'duration' => '--',
-                    'size' => '--',
-                    'platform' => 'Facebook',
-                    'links' => $fbLinks
-                ];
-            }
-        }
-
-        // SnapSave API fallback
-        if (!$realData) {
-            $snapRes = curl_request('https://snapsave.app/action.php?lang=en', 'POST', ['url' => $url], [
-                'Origin: https://snapsave.app',
-                'Referer: https://snapsave.app/'
-            ], 5);
-
-            if ($snapRes && preg_match('/eval\(function\(h,u,n,t,e,r\)\{.*?\}\s*\(\s*["\'](.*?)["\']\s*,\s*(\d+)\s*,\s*["\'](.*?)["\']\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/s', $snapRes, $m)) {
-                $h_str = $m[1]; $u_val = (int)$m[2]; $n_str = $m[3]; $t_val = (int)$m[4]; $e_val = (int)$m[5];
-                $baseStr = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/";
-                
-                $decodeNum = function($d, $e, $f) use ($baseStr) {
-                    $h_chars = substr($baseStr, 0, $e);
-                    $i_chars = substr($baseStr, 0, $f);
-                    $j = 0;
-                    $d_arr = str_split(strrev($d));
-                    foreach ($d_arr as $c => $b) {
-                        $pos = strpos($h_chars, $b);
-                        if ($pos !== false) $j += $pos * pow($e, $c);
-                    }
-                    $k = "";
-                    while ($j > 0) {
-                        $k = $i_chars[$j % $f] . $k;
-                        $j = intval(($j - ($j % $f)) / $f);
-                    }
-                    return $k ?: "0";
-                };
-
-                $r_str = "";
-                $len = strlen($h_str);
-                $n_arr = str_split($n_str);
-                $delimiter = $n_str[$e_val] ?? '';
-                for ($i = 0; $i < $len; $i++) {
-                    $s_chunk = "";
-                    while ($i < $len && $h_str[$i] !== $delimiter) {
-                        $s_chunk .= $h_str[$i];
-                        $i++;
-                    }
-                    for ($j = 0; $j < count($n_arr); $j++) {
-                        $s_chunk = str_replace($n_arr[$j], (string)$j, $s_chunk);
-                    }
-                    $val = (int)$decodeNum($s_chunk, $e_val, 10) - $t_val;
-                    if ($val > 0) $r_str .= chr($val);
-                }
-
-                $decoded = urldecode($r_str);
-                if ($decoded) {
-                    $clean = str_replace('\\/', '/', $decoded);
-                    $snapTitle = "Facebook Video";
-                    if (preg_match('/<p[^>]*class=["\']video-des["\'][^>]*>(.*?)<\/p>/is', $clean, $tm)) {
-                        $snapTitle = trim(strip_tags($tm[1]));
-                    }
-                    $snapThumb = "assets/images/placeholder.jpg";
-                    if (preg_match('/<img[^>]+src=["\']([^"\'\s]+)["\']/', $clean, $im)) {
-                        $snapThumb = $im[1];
-                    }
-                    $snapLinks = [];
-                    if (preg_match_all('/<tr>(.*?)<\/tr>/is', $clean, $trMatches)) {
-                        foreach ($trMatches[1] as $tr) {
-                            $quality = "Media";
-                            if (preg_match('/<td[^>]*class=["\']video-quality["\'][^>]*>(.*?)<\/td>/is', $tr, $qm)) {
-                                $quality = trim(strip_tags($qm[1]));
-                            }
-                            if (preg_match('/<a[^>]+href=["\']([^"\'\s]+)["\'][^>]*>/is', $tr, $lm)) {
-                                $vUrl = html_entity_decode($lm[1]);
-                                if (strpos($vUrl, 'http') === 0 && strpos(strtolower($tr), 'app') === false) {
-                                    $snapLinks[] = [
-                                        'url' => $vUrl,
-                                        'format' => (strpos(strtolower($quality), 'mp3') !== false) ? 'mp3' : 'mp4',
-                                        'label' => "Download ($quality)"
-                                    ];
-                                }
-                            }
-                        }
-                    }
-                    if (!empty($snapLinks)) {
-                        $realData = [
-                            'title' => $snapTitle,
-                            'thumbnail' => $snapThumb,
-                            'duration' => '--',
-                            'size' => '--',
-                            'platform' => 'Facebook',
-                            'links' => $snapLinks
-                        ];
-                    }
-                }
             }
         }
     }
@@ -499,7 +459,7 @@ if (!$realData && function_exists('curl_init')) {
 if (!$realData) {
     echo json_encode([
         'success' => false,
-        'message' => 'Unable to fetch video from server. Attempting client fallback...'
+        'message' => 'Unable to fetch video. The media might be private, blocked, or not supported.'
     ]);
     exit;
 }
