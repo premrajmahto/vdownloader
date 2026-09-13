@@ -200,8 +200,8 @@ if (file_exists($ytDlpExe)) {
 // Attempt 2: REST APIs & Scrapers Fallback (Essential for shared live hosts like Hostinger)
 if (!$realData && function_exists('curl_init')) {
 
-    // A. Facebook Fallback (Reels, Videos, Watch, Share Links)
-    if ($platform === 'Facebook' && !$realData) {
+    // A. Facebook & Instagram via GetMyFB API (Supports Reels, Posts & Videos)
+    if (($platform === 'Facebook' || $platform === 'Instagram') && !$realData) {
         $fbRes = curl_request("https://getmyfb.com/process", 'POST', "id=" . urlencode($url) . "&locale=en", [
             'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
             'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -211,7 +211,7 @@ if (!$realData && function_exists('curl_init')) {
         ], 8);
 
         if ($fbRes) {
-            $fbTitle = "Facebook Video";
+            $fbTitle = $platform . " Media";
             $fbThumb = "assets/images/placeholder.jpg";
             $fbLinks = [];
 
@@ -222,7 +222,7 @@ if (!$realData && function_exists('curl_init')) {
                 $fbThumb = html_entity_decode($m[1]);
             }
 
-            if (preg_match_all('/<a[^>]+href=["\']([^"\'\s]*ssscdn\.io[^"\'\s]*)["\']/i', $fbRes, $m)) {
+            if (preg_match_all('/<a[^>]+href=["\']([^"\'\s]*(?:ssscdn\.io|fbcdn|cdninstagram)[^"\'\s]*)["\']/i', $fbRes, $m) || preg_match_all('/<a[^>]+class=["\']results-list-item-btn["\'][^>]+href=["\']([^"\'\s]+)["\']/i', $fbRes, $m)) {
                 foreach (array_unique($m[1]) as $idx => $linkUrl) {
                     $cleanUrl = html_entity_decode($linkUrl);
                     if (strpos($cleanUrl, 'http') === 0 && strpos($cleanUrl, 'play.google.com') === false) {
@@ -238,53 +238,13 @@ if (!$realData && function_exists('curl_init')) {
 
             if (!empty($fbLinks)) {
                 $realData = [
-                    'title' => $fbTitle ?: 'Facebook Video',
+                    'title' => $fbTitle ?: ($platform . ' Video'),
                     'thumbnail' => $fbThumb,
                     'duration' => '--',
                     'size' => '--',
-                    'platform' => 'Facebook',
+                    'platform' => $platform,
                     'links' => $fbLinks
                 ];
-            }
-        }
-
-        if (!$realData) {
-            $fbHtml = curl_request($url, 'GET', null, [
-                'User-Agent: facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)'
-            ], 6);
-
-            if ($fbHtml) {
-                $fbTitle = "Facebook Video";
-                $fbThumb = "assets/images/placeholder.jpg";
-                $fbLinks = [];
-
-                if (preg_match('/<meta\s+property=["\']og:title["\']\s+content=["\']([^"\'\s]+)["\']/i', $fbHtml, $m)) {
-                    $fbTitle = html_entity_decode($m[1]);
-                }
-                if (preg_match('/<meta\s+property=["\']og:image["\']\s+content=["\']([^"\'\s]+)["\']/i', $fbHtml, $m)) {
-                    $fbThumb = html_entity_decode($m[1]);
-                }
-
-                if (preg_match_all('/(?:browser_native_hd_url|browser_native_sd_url|hd_src|sd_src|playable_url|playable_url_quality_hd)["\']\s*:\s*["\']([^"\'\s]+)["\']/i', $fbHtml, $m)) {
-                    foreach ($m[1] as $idx => $vUrl) {
-                        $vUrl = str_replace(['\/', '\\u00253D', '\\u0026'], ['/', '=', '&'], $vUrl);
-                        if (strpos($vUrl, 'http') === 0) {
-                            $label = ($idx === 0) ? 'Download HD Video' : 'Download SD Video';
-                            $fbLinks[] = ['url' => $vUrl, 'format' => 'mp4', 'label' => $label];
-                        }
-                    }
-                }
-
-                if (!empty($fbLinks)) {
-                    $realData = [
-                        'title' => $fbTitle,
-                        'thumbnail' => $fbThumb,
-                        'duration' => '--',
-                        'size' => '--',
-                        'platform' => 'Facebook',
-                        'links' => $fbLinks
-                    ];
-                }
             }
         }
     }
