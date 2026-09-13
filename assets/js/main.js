@@ -71,8 +71,66 @@ document.addEventListener('DOMContentLoaded', () => {
             function attemptClientSideFallback(videoUrl, failMessage) {
                 const lowerUrl = videoUrl.toLowerCase();
 
-                // 1. TikTok, Instagram, or Facebook via Tikwm Client API
-                if (lowerUrl.includes('tiktok.com') || lowerUrl.includes('instagram.com') || lowerUrl.includes('instagr.am') || lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch')) {
+                // 1. Instagram Client Extraction (SnapSave Client API)
+                if (lowerUrl.includes('instagram.com') || lowerUrl.includes('instagr.am')) {
+                    fetch('https://snapsave.app/action.php?lang=en', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: new URLSearchParams({ url: videoUrl })
+                    })
+                    .then(r => r.text())
+                    .then(snapRes => {
+                        const decodedHtml = decodeSnapSaveJS(snapRes);
+                        if (decodedHtml) {
+                            const links = [];
+                            let title = 'Instagram Video';
+                            let thumb = 'assets/images/placeholder.jpg';
+
+                            const titleMatch = decodedHtml.match(/<p[^>]*class=["\']video-des["\'][^>]*>(.*?)<\/p>/i);
+                            if (titleMatch) title = titleMatch[1].replace(/<[^>]+>/g, '').trim();
+
+                            const imgMatch = decodedHtml.match(/<img[^>]+src=["\']([^"\'\s]+)["\']/i);
+                            if (imgMatch) thumb = imgMatch[1];
+
+                            const aRegex = /<a[^>]+href=["\']([^"\'\s]+)["\'][^>]*>(.*?)<\/a>/gi;
+                            let m;
+                            while ((m = aRegex.exec(decodedHtml)) !== null) {
+                                let linkUrl = m[1].replace(/&amp;/g, '&');
+                                let btnText = m[2].replace(/<[^>]+>/g, '').trim();
+                                if (linkUrl.startsWith('http') && !linkUrl.toLowerCase().includes('snapsave') && !btnText.toLowerCase().includes('app')) {
+                                    links.push({
+                                        url: linkUrl,
+                                        format: 'mp4',
+                                        label: 'Download ' + (btnText || ('Video ' + (links.length + 1)))
+                                    });
+                                }
+                            }
+
+                            if (links.length > 0) {
+                                loader.style.display = 'none';
+                                showResult({
+                                    title: title,
+                                    thumbnail: thumb,
+                                    duration: '--',
+                                    size: '--',
+                                    platform: 'Instagram',
+                                    links: links
+                                });
+                                return;
+                            }
+                        }
+                        fallbackIgOembed(videoUrl, failMessage);
+                    })
+                    .catch(() => {
+                        fallbackIgOembed(videoUrl, failMessage);
+                    });
+                    return;
+                }
+
+                // 2. TikTok or Facebook via Tikwm Client API
+                if (lowerUrl.includes('tiktok.com') || lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch')) {
                     fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(videoUrl))
                     .then(res => res.json())
                     .then(resData => {
@@ -89,11 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 });
                             }
                             if (links.length > 0) {
-                                let detectedPlatform = 'Social Media';
-                                if (lowerUrl.includes('tiktok.com')) detectedPlatform = 'TikTok';
-                                else if (lowerUrl.includes('instagram.com') || lowerUrl.includes('instagr.am')) detectedPlatform = 'Instagram';
-                                else if (lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch')) detectedPlatform = 'Facebook';
-
+                                let detectedPlatform = lowerUrl.includes('tiktok.com') ? 'TikTok' : 'Facebook';
                                 showResult({
                                     title: d.title || (detectedPlatform + ' Video'),
                                     thumbnail: d.cover || d.origin_cover || 'assets/images/placeholder.jpg',
@@ -105,34 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 return;
                             }
                         }
-                        
-                        // Fallback 1b: Instagram oEmbed Client Fallback
-                        if (lowerUrl.includes('instagram.com') || lowerUrl.includes('instagr.am')) {
-                            fetch('https://api.instagram.com/oembed/?url=' + encodeURIComponent(videoUrl))
-                            .then(r => r.json())
-                            .then(oData => {
-                                loader.style.display = 'none';
-                                if (oData && oData.thumbnail_url) {
-                                    showResult({
-                                        title: oData.title || 'Instagram Media',
-                                        thumbnail: oData.thumbnail_url,
-                                        duration: '--',
-                                        size: '--',
-                                        platform: 'Instagram',
-                                        links: [
-                                            { url: oData.thumbnail_url, format: 'jpg', label: 'Download Cover / Photo' }
-                                        ]
-                                    });
-                                    return;
-                                }
-                                showFinalError(failMessage);
-                            })
-                            .catch(() => {
-                                showFinalError(failMessage);
-                            });
-                        } else {
-                            showFinalError(failMessage);
-                        }
+                        showFinalError(failMessage);
                     })
                     .catch(() => {
                         showFinalError(failMessage);
@@ -140,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                // 2. YouTube via oEmbed & Piped / Invidious Client API
+                // 3. YouTube via oEmbed & Piped / Invidious Client API
                 const ytMatch = videoUrl.match(/(?:v=|\/embed\/|\/1\/|\/v\/|https?:\/\/youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
                 if (ytMatch) {
                     const videoId = ytMatch[1];
@@ -184,7 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                // 3. General Fallback for Twitter / Pinterest / Snapchat
+                // 4. General Fallback for Twitter / Pinterest / Snapchat
                 fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(videoUrl))
                 .then(r => r.json())
                 .then(resData => {
@@ -209,6 +236,80 @@ document.addEventListener('DOMContentLoaded', () => {
                 .catch(() => {
                     showFinalError(failMessage);
                 });
+            }
+
+            function fallbackIgOembed(videoUrl, failMessage) {
+                fetch('https://api.instagram.com/oembed/?url=' + encodeURIComponent(videoUrl))
+                .then(r => r.json())
+                .then(oData => {
+                    loader.style.display = 'none';
+                    if (oData && oData.thumbnail_url) {
+                        showResult({
+                            title: oData.title || 'Instagram Media',
+                            thumbnail: oData.thumbnail_url,
+                            duration: '--',
+                            size: '--',
+                            platform: 'Instagram',
+                            links: [
+                                { url: oData.thumbnail_url, format: 'jpg', label: 'Download Cover Photo' }
+                            ]
+                        });
+                        return;
+                    }
+                    showFinalError(failMessage);
+                })
+                .catch(() => {
+                    showFinalError(failMessage);
+                });
+            }
+
+            function decodeSnapSaveJS(snapRes) {
+                try {
+                    const match = snapRes.match(/eval\(function\(h,u,n,t,e,r\)\{.*?\}\s*\(\s*["\'](.*?)["\']\s*,\s*(\d+)\s*,\s*["\'](.*?)["\']\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/s);
+                    if (!match) return null;
+                    let h_str = match[1], u_val = parseInt(match[2]), n_str = match[3], t_val = parseInt(match[4]), e_val = parseInt(match[5]);
+                    const baseStr = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/";
+                    
+                    function decodeNum(d, e, f) {
+                        let h_chars = baseStr.substring(0, e);
+                        let i_chars = baseStr.substring(0, f);
+                        let j = 0;
+                        let d_arr = d.split('').reverse();
+                        d_arr.forEach((b, c) => {
+                            let pos = h_chars.indexOf(b);
+                            if (pos !== -1) j += pos * Math.pow(e, c);
+                        });
+                        let k = "";
+                        while (j > 0) {
+                            k = i_chars[j % f] + k;
+                            j = Math.floor((j - (j % f)) / f);
+                        }
+                        return k || "0";
+                    }
+
+                    let r_str = "";
+                    let len = h_str.length;
+                    let n_arr = n_str.split('');
+                    let delimiter = n_str[e_val] || '';
+                    let i = 0;
+                    while (i < len) {
+                        let s_chunk = "";
+                        while (i < len && h_str[i] !== delimiter) {
+                            s_chunk += h_str[i];
+                            i++;
+                        }
+                        n_arr.forEach((b, j) => {
+                            s_chunk = s_chunk.replaceAll(b, j.toString());
+                        });
+                        let val = parseInt(decodeNum(s_chunk, e_val, 10)) - t_val;
+                        if (val > 0) r_str += String.fromCharCode(val);
+                        i++;
+                    }
+
+                    return decodeURIComponent(r_str).replace(/\\\//g, '/');
+                } catch (e) {
+                    return null;
+                }
             }
 
             function showFinalError(msg) {
