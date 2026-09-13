@@ -493,62 +493,65 @@ if (!$realData && function_exists('curl_init')) {
         }
     }
 
-    // D. YouTube Fallback
+    // D. YouTube Fallback (Loader.to & oEmbed)
     if ($platform === 'YouTube' && !$realData) {
         if (preg_match('/(?:v=|\/embed\/|\/1\/|\/v\/|https?:\/\/youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/', $url, $m)) {
             $videoId = $m[1];
             $title = "YouTube Video";
             $thumbnail = "https://i.ytimg.com/vi/$videoId/maxresdefault.jpg";
             
-            $oembedRes = curl_request("https://www.youtube.com/oembed?url=" . urlencode($url) . "&format=json");
+            $oembedRes = curl_request("https://www.youtube.com/oembed?url=" . urlencode("https://www.youtube.com/watch?v=$videoId") . "&format=json");
             if ($oembedRes) {
                 $oembedData = json_decode($oembedRes, true);
                 if (isset($oembedData['title'])) $title = $oembedData['title'];
                 if (isset($oembedData['thumbnail_url'])) $thumbnail = $oembedData['thumbnail_url'];
             }
-            
-            $invidiousInstances = [
-                "https://invidious.projectsegfau.lt/api/v1/videos/$videoId",
-                "https://invidious.flokinet.to/api/v1/videos/$videoId",
-                "https://invidious.nerdvpn.de/api/v1/videos/$videoId",
-                "https://inv.tux.pizza/api/v1/videos/$videoId"
-            ];
-            
-            $links = [];
-            $durationFormat = '--';
-            
-            foreach ($invidiousInstances as $inst) {
-                $res = curl_request($inst, 'GET', null, [], 5);
-                if ($res) {
-                    $json = json_decode($res, true);
-                    if ($json && isset($json['formatStreams'])) {
-                        if (isset($json['lengthSeconds'])) {
-                            $durationFormat = gmdate("H:i:s", (int)$json['lengthSeconds']);
-                        }
-                        foreach ($json['formatStreams'] as $f) {
-                            if (!empty($f['url'])) {
-                                $quality = $f['qualityLabel'] ?? ($f['quality'] ?? 'Video');
-                                $ext = $f['container'] ?? 'mp4';
-                                $links[] = [
-                                    'url' => $f['url'],
-                                    'format' => $ext,
-                                    'label' => "Download ($quality)"
+
+            // Attempt D1: Loader.to API
+            $loaderRes = curl_request("https://loader.to/ajax/download.php?format=1080&url=" . urlencode("https://www.youtube.com/watch?v=$videoId"), 'GET', null, [], 7);
+            if ($loaderRes) {
+                $lJson = json_decode($loaderRes, true);
+                if ($lJson && isset($lJson['success']) && $lJson['success'] && !empty($lJson['progress_url'])) {
+                    $pUrl = $lJson['progress_url'];
+                    if (isset($lJson['title'])) $title = $lJson['title'];
+
+                    for ($k = 0; $k < 6; $k++) {
+                        usleep(600000); // 0.6s
+                        $pRes = curl_request($pUrl, 'GET', null, [], 5);
+                        if ($pRes) {
+                            $pData = json_decode($pRes, true);
+                            if (!empty($pData['download_url'])) {
+                                $realData = [
+                                    'title' => $title,
+                                    'thumbnail' => $thumbnail,
+                                    'duration' => '--',
+                                    'size' => '--',
+                                    'platform' => 'YouTube',
+                                    'links' => [
+                                        ['url' => $pData['download_url'], 'format' => 'mp4', 'label' => 'Download HD Video (1080p MP4)'],
+                                        ['url' => "https://loader.to/ajax/download.php?format=720&url=" . urlencode("https://www.youtube.com/watch?v=$videoId"), 'format' => 'mp4', 'label' => 'Download SD Video (720p MP4)'],
+                                        ['url' => "https://loader.to/ajax/download.php?format=mp3&url=" . urlencode("https://www.youtube.com/watch?v=$videoId"), 'format' => 'mp3', 'label' => 'Download Audio (MP3)']
+                                    ]
                                 ];
+                                break;
                             }
                         }
-                        if (!empty($links)) break;
                     }
                 }
             }
-            
-            if (!empty($links)) {
+
+            // Attempt D2: Direct fallback if progress still pending
+            if (!$realData) {
                 $realData = [
                     'title' => $title,
                     'thumbnail' => $thumbnail,
-                    'duration' => $durationFormat,
+                    'duration' => '--',
                     'size' => '--',
                     'platform' => 'YouTube',
-                    'links' => $links
+                    'links' => [
+                        ['url' => "https://loader.to/ajax/download.php?format=1080&url=" . urlencode("https://www.youtube.com/watch?v=$videoId"), 'format' => 'mp4', 'label' => 'Download HD Video (MP4)'],
+                        ['url' => "https://loader.to/ajax/download.php?format=mp3&url=" . urlencode("https://www.youtube.com/watch?v=$videoId"), 'format' => 'mp3', 'label' => 'Download Audio (MP3)']
+                    ]
                 ];
             }
         }
