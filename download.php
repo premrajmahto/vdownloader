@@ -21,14 +21,16 @@ if (isset($_GET['url']) && isset($_GET['name'])) {
     // Detect platform/domain to set matching Referer
     $referer = 'https://www.google.com/';
     $host = strtolower(parse_url($fileUrl, PHP_URL_HOST) ?? '');
-    if (strpos($host, 'youtube') !== false || strpos($host, 'googlevideo') !== false) {
-        $referer = 'https://www.youtube.com/';
-    } elseif (strpos($host, 'ssscdn') !== false || strpos($host, 'getmyfb') !== false) {
-        $referer = 'https://getmyfb.com/';
+    if (strpos($host, 'youtube') !== false || strpos($host, 'googlevideo') !== false || strpos($host, 'savenow.to') !== false || strpos($host, 'affadaffa') !== false) {
+        $referer = 'https://loader.to/';
+    } elseif (strpos($host, 'ssscdn') !== false || strpos($host, 'snapsave') !== false || strpos($host, 'getmyfb') !== false) {
+        $referer = 'https://snapsave.app/';
     } elseif (strpos($host, 'facebook') !== false || strpos($host, 'fbcdn') !== false) {
         $referer = 'https://www.facebook.com/';
     } elseif (strpos($host, 'instagram') !== false || strpos($host, 'cdninstagram') !== false) {
         $referer = 'https://www.instagram.com/';
+    } elseif (strpos($host, 'tikwm') !== false || strpos($host, 'tiktok') !== false) {
+        $referer = 'https://www.tikwm.com/';
     }
 
     $headersSent = false;
@@ -39,7 +41,7 @@ if (isset($_GET['url']) && isset($_GET['name'])) {
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
     curl_setopt($ch, CURLOPT_TIMEOUT, 0); // No timeout for download streaming
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         'Accept: */*',
         'Accept-Language: en-US,en;q=0.9',
@@ -52,26 +54,32 @@ if (isset($_GET['url']) && isset($_GET['name'])) {
         $len = strlen($data);
         if (!$headersSent) {
             $httpCode = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
-            if ($httpCode >= 200 && $httpCode < 300) {
-                if (ob_get_level()) {
-                    @ob_end_clean();
-                }
-                header('Content-Description: File Transfer');
-                header('Content-Type: ' . $mimeType);
-                header('Content-Disposition: attachment; filename="' . $downloadName . '"');
-                header('Expires: 0');
-                header('Cache-Control: must-revalidate');
-                header('Pragma: public');
+            $contentType = strtolower(curl_getinfo($curl, CURLINFO_CONTENT_TYPE) ?? '');
 
-                $contentLength = curl_getinfo($curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
-                if ($contentLength > 0) {
-                    header('Content-Length: ' . (int)$contentLength);
-                }
-
-                $headersSent = true;
-            } else {
-                return 0; // Abort cURL transfer if HTTP status is non-2xx (e.g. 403, 404, 204)
+            // Abort if HTTP status is non-2xx or if response is HTML/JSON text instead of binary video
+            if ($httpCode < 200 || $httpCode >= 300) {
+                return 0;
             }
+            if (strpos($contentType, 'text/html') !== false || strpos($contentType, 'application/json') !== false || strpos($contentType, 'text/xml') !== false) {
+                return 0;
+            }
+
+            if (ob_get_level()) {
+                @ob_end_clean();
+            }
+            header('Content-Description: File Transfer');
+            header('Content-Type: ' . $mimeType);
+            header('Content-Disposition: attachment; filename="' . $downloadName . '"');
+            header('Expires: 0');
+            header('Cache-Control: must-revalidate');
+            header('Pragma: public');
+
+            $contentLength = curl_getinfo($curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
+            if ($contentLength > 0) {
+                header('Content-Length: ' . sprintf('%.0f', $contentLength));
+            }
+
+            $headersSent = true;
         }
 
         echo $data;
@@ -82,9 +90,19 @@ if (isset($_GET['url']) && isset($_GET['name'])) {
     @curl_exec($ch);
     curl_close($ch);
 
-    // If headers were not sent (e.g. HTTP 403, 204, or cURL failure), fallback to direct browser redirect
+    // If headers were not sent (e.g. HTTP 403, 404, or cURL failure), present clean error page
     if (!$headersSent) {
-        header("Location: " . $fileUrl);
+        header('Content-Type: text/html; charset=utf-8');
+        echo '<!DOCTYPE html><html><head><title>Download Notice</title>';
+        echo '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">';
+        echo '</head><body class="bg-light text-center py-5">';
+        echo '<div class="container" style="max-width: 520px;">';
+        echo '<div class="card shadow p-4 rounded-4">';
+        echo '<h4 class="text-danger mb-3">Download Link Restricted</h4>';
+        echo '<p class="text-secondary mb-4">The media link could not be streamed directly because it has expired or access was restricted by the platform.</p>';
+        echo '<a href="' . htmlspecialchars($fileUrl) . '" target="_blank" class="btn btn-primary w-100 mb-2">Open Direct Link in Browser</a>';
+        echo '<a href="index.php" class="btn btn-outline-secondary w-100">Go Back to Downloader</a>';
+        echo '</div></div></body></html>';
         exit;
     }
     exit;

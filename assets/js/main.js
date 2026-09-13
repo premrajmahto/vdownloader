@@ -163,7 +163,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                     links.push({
                                         url: f.url,
                                         format: f.mimeType && f.mimeType.includes('mp4') ? 'mp4' : 'webm',
-                                        label: `Download (${f.quality || 'Video'})`
+                                        label: `Download (${f.quality || 'Video'})`,
+                                        isDirect: true
                                     });
                                 });
                             }
@@ -319,7 +320,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if(data.links && data.links.length > 0) {
             data.links.forEach(link => {
                 const a = document.createElement('a');
-                a.href = 'download.php?url=' + encodeURIComponent(link.url) + '&name=' + encodeURIComponent(data.title) + '&format=' + encodeURIComponent(link.format);
+                if (link.isDirect) {
+                    a.href = link.url;
+                    a.target = '_blank';
+                    a.rel = 'noopener noreferrer';
+                } else {
+                    a.href = 'download.php?url=' + encodeURIComponent(link.url) + '&name=' + encodeURIComponent(data.title) + '&format=' + encodeURIComponent(link.format);
+                    a.target = '_blank';
+                }
                 a.className = 'btn btn-outline-primary w-100 mb-2';
                 
                 let labelText = (link.label || 'Media').trim();
@@ -328,7 +336,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 a.innerHTML = `<i class="fas fa-download"></i> Download ${labelText}`;
-                a.target = '_blank';
                 linksContainer.appendChild(a);
             });
         } else {

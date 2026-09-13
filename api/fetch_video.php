@@ -27,7 +27,11 @@ try {
     exit;
 }
 
-$input = json_decode(file_get_contents('php://input'), true);
+$rawInput = file_get_contents('php://input');
+if (empty($rawInput)) {
+    $rawInput = @file_get_contents('php://stdin');
+}
+$input = json_decode($rawInput, true);
 $url = isset($input['url']) ? trim($input['url']) : '';
 
 if (empty($url) || !filter_var($url, FILTER_VALIDATE_URL)) {
@@ -508,19 +512,19 @@ if (!$realData && function_exists('curl_init')) {
             }
 
             // Attempt D1: Loader.to API
-            $loaderRes = curl_request("https://loader.to/ajax/download.php?format=1080&url=" . urlencode("https://www.youtube.com/watch?v=$videoId"), 'GET', null, [], 7);
+            $loaderRes = curl_request("https://loader.to/ajax/download.php?format=720&url=" . urlencode("https://www.youtube.com/watch?v=$videoId"), 'GET', null, [], 8);
             if ($loaderRes) {
                 $lJson = json_decode($loaderRes, true);
                 if ($lJson && isset($lJson['success']) && $lJson['success'] && !empty($lJson['progress_url'])) {
                     $pUrl = $lJson['progress_url'];
                     if (isset($lJson['title'])) $title = $lJson['title'];
 
-                    for ($k = 0; $k < 6; $k++) {
-                        usleep(600000); // 0.6s
+                    for ($k = 0; $k < 25; $k++) {
+                        usleep(800000);
                         $pRes = curl_request($pUrl, 'GET', null, [], 5);
                         if ($pRes) {
                             $pData = json_decode($pRes, true);
-                            if (!empty($pData['download_url'])) {
+                            if (!empty($pData['download_url']) && strpos($pData['download_url'], 'http') === 0) {
                                 $realData = [
                                     'title' => $title,
                                     'thumbnail' => $thumbnail,
@@ -528,9 +532,7 @@ if (!$realData && function_exists('curl_init')) {
                                     'size' => '--',
                                     'platform' => 'YouTube',
                                     'links' => [
-                                        ['url' => $pData['download_url'], 'format' => 'mp4', 'label' => 'Download HD Video (1080p MP4)'],
-                                        ['url' => "https://loader.to/ajax/download.php?format=720&url=" . urlencode("https://www.youtube.com/watch?v=$videoId"), 'format' => 'mp4', 'label' => 'Download SD Video (720p MP4)'],
-                                        ['url' => "https://loader.to/ajax/download.php?format=mp3&url=" . urlencode("https://www.youtube.com/watch?v=$videoId"), 'format' => 'mp3', 'label' => 'Download Audio (MP3)']
+                                        ['url' => $pData['download_url'], 'format' => 'mp4', 'label' => 'Download MP4 Video (HD)']
                                     ]
                                 ];
                                 break;
@@ -538,21 +540,6 @@ if (!$realData && function_exists('curl_init')) {
                         }
                     }
                 }
-            }
-
-            // Attempt D2: Direct fallback if progress still pending
-            if (!$realData) {
-                $realData = [
-                    'title' => $title,
-                    'thumbnail' => $thumbnail,
-                    'duration' => '--',
-                    'size' => '--',
-                    'platform' => 'YouTube',
-                    'links' => [
-                        ['url' => "https://loader.to/ajax/download.php?format=1080&url=" . urlencode("https://www.youtube.com/watch?v=$videoId"), 'format' => 'mp4', 'label' => 'Download HD Video (MP4)'],
-                        ['url' => "https://loader.to/ajax/download.php?format=mp3&url=" . urlencode("https://www.youtube.com/watch?v=$videoId"), 'format' => 'mp3', 'label' => 'Download Audio (MP3)']
-                    ]
-                ];
             }
         }
     }
