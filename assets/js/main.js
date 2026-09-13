@@ -71,8 +71,11 @@ document.addEventListener('DOMContentLoaded', () => {
             function attemptClientSideFallback(videoUrl, failMessage) {
                 const lowerUrl = videoUrl.toLowerCase();
 
-                // 1. Instagram Client Extraction (SnapSave Client API)
-                if (lowerUrl.includes('instagram.com') || lowerUrl.includes('instagr.am')) {
+                // 1. Instagram & Facebook Client Extraction (SnapSave Client API)
+                if (lowerUrl.includes('instagram.com') || lowerUrl.includes('instagr.am') || lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch')) {
+                    const isIg = lowerUrl.includes('instagram.com') || lowerUrl.includes('instagr.am');
+                    const targetPlatform = isIg ? 'Instagram' : 'Facebook';
+
                     fetch('https://snapsave.app/action.php?lang=en', {
                         method: 'POST',
                         headers: {
@@ -85,10 +88,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         const decodedHtml = decodeSnapSaveJS(snapRes);
                         if (decodedHtml) {
                             const links = [];
-                            let title = 'Instagram Video';
+                            let title = targetPlatform + ' Video';
                             let thumb = 'assets/images/placeholder.jpg';
 
-                            const titleMatch = decodedHtml.match(/<p[^>]*class=["\']video-des["\'][^>]*>(.*?)<\/p>/i);
+                            const titleMatch = decodedHtml.match(/<p[^>]*class=["\']video-des["\'][^>]*>(.*?)<\/p>/i) || decodedHtml.match(/<h4[^>]*class=["\']results-list-item-title["\'][^>]*>(.*?)<\/h4>/i);
                             if (titleMatch) title = titleMatch[1].replace(/<[^>]+>/g, '').trim();
 
                             const imgMatch = decodedHtml.match(/<img[^>]+src=["\']([^"\'\s]+)["\']/i);
@@ -115,55 +118,31 @@ document.addEventListener('DOMContentLoaded', () => {
                                     thumbnail: thumb,
                                     duration: '--',
                                     size: '--',
-                                    platform: 'Instagram',
+                                    platform: targetPlatform,
                                     links: links
                                 });
                                 return;
                             }
                         }
-                        fallbackIgOembed(videoUrl, failMessage);
+                        if (isIg) {
+                            fallbackIgOembed(videoUrl, failMessage);
+                        } else {
+                            fallbackTikwm(videoUrl, failMessage);
+                        }
                     })
                     .catch(() => {
-                        fallbackIgOembed(videoUrl, failMessage);
+                        if (isIg) {
+                            fallbackIgOembed(videoUrl, failMessage);
+                        } else {
+                            fallbackTikwm(videoUrl, failMessage);
+                        }
                     });
                     return;
                 }
 
-                // 2. TikTok or Facebook via Tikwm Client API
-                if (lowerUrl.includes('tiktok.com') || lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch')) {
-                    fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(videoUrl))
-                    .then(res => res.json())
-                    .then(resData => {
-                        if (resData && resData.code === 0 && resData.data) {
-                            loader.style.display = 'none';
-                            const d = resData.data;
-                            let links = [];
-                            if (d.play) links.push({ url: d.play, format: 'mp4', label: 'Download (No Watermark)' });
-                            if (d.wmplay) links.push({ url: d.wmplay, format: 'mp4', label: 'Download (Watermark)' });
-                            if (d.music) links.push({ url: d.music, format: 'mp3', label: 'Download Audio (MP3)' });
-                            if (d.images && Array.isArray(d.images)) {
-                                d.images.forEach((img, i) => {
-                                    links.push({ url: img, format: 'jpg', label: 'Download Photo ' + (i + 1) });
-                                });
-                            }
-                            if (links.length > 0) {
-                                let detectedPlatform = lowerUrl.includes('tiktok.com') ? 'TikTok' : 'Facebook';
-                                showResult({
-                                    title: d.title || (detectedPlatform + ' Video'),
-                                    thumbnail: d.cover || d.origin_cover || 'assets/images/placeholder.jpg',
-                                    duration: d.duration ? d.duration + 's' : '--',
-                                    size: '--',
-                                    platform: detectedPlatform,
-                                    links: links
-                                });
-                                return;
-                            }
-                        }
-                        showFinalError(failMessage);
-                    })
-                    .catch(() => {
-                        showFinalError(failMessage);
-                    });
+                // 2. TikTok via Tikwm Client API
+                if (lowerUrl.includes('tiktok.com')) {
+                    fallbackTikwm(videoUrl, failMessage);
                     return;
                 }
 
@@ -235,6 +214,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 })
                 .catch(() => {
                     showFinalError(failMessage);
+                });
+            }
+
+            function fallbackTikwm(videoUrl, failMessage) {
+                fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(videoUrl))
+                .then(r => r.json())
+                .then(resData => {
+                    loader.style.display = 'none';
+                    if (resData && resData.code === 0 && resData.data && (resData.data.play || resData.data.wmplay)) {
+                        const d = resData.data;
+                        let links = [];
+                        if (d.play) links.push({ url: d.play, format: 'mp4', label: 'Download (No Watermark)' });
+                        if (d.wmplay) links.push({ url: d.wmplay, format: 'mp4', label: 'Download (Watermark)' });
+                        if (d.music) links.push({ url: d.music, format: 'mp3', label: 'Download Audio' });
+                        showResult({
+                            title: d.title || 'Social Video',
+                            thumbnail: d.cover || 'assets/images/placeholder.jpg',
+                            duration: d.duration ? d.duration + 's' : '--',
+                            size: '--',
+                            platform: 'Social Media',
+                            links: links
+                        });
+                    } else {
+                        showFinalError(failMessage || "Unable to download video from this link. Please verify the URL.");
+                    }
+                })
+                .catch(() => {
+                    showFinalError(failMessage || "Unable to download video from this link. Please verify the URL.");
                 });
             }
 

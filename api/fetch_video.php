@@ -200,51 +200,87 @@ if (file_exists($ytDlpExe)) {
 // Attempt 2: REST APIs & Scrapers Fallback (Essential for shared live hosts like Hostinger)
 if (!$realData && function_exists('curl_init')) {
 
-    // A. Facebook via GetMyFB API (Supports Reels, Posts & Videos)
+    // A. Facebook via SnapSave API (Supports Reels, Posts & Videos)
     if ($platform === 'Facebook' && !$realData) {
-        $fbRes = curl_request("https://getmyfb.com/process", 'POST', "id=" . urlencode($url) . "&locale=en", [
-            'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
-            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'X-Requested-With: XMLHttpRequest',
-            'Origin: https://getmyfb.com',
-            'Referer: https://getmyfb.com/'
+        $snapRes = curl_request('https://snapsave.app/action.php?lang=en', 'POST', ['url' => $url], [
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+            'Origin: https://snapsave.app',
+            'Referer: https://snapsave.app/'
         ], 8);
 
-        if ($fbRes) {
-            $fbTitle = "Facebook Media";
-            $fbThumb = "assets/images/placeholder.jpg";
-            $fbLinks = [];
+        if ($snapRes && preg_match('/eval\(function\(h,u,n,t,e,r\)\{.*?\}\s*\(\s*["\'](.*?)["\']\s*,\s*(\d+)\s*,\s*["\'](.*?)["\']\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/s', $snapRes, $m)) {
+            $h_str = $m[1]; $u_val = (int)$m[2]; $n_str = $m[3]; $t_val = (int)$m[4]; $e_val = (int)$m[5];
+            $baseStr = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/";
+            
+            $decodeNum = function($d, $e, $f) use ($baseStr) {
+                $h_chars = substr($baseStr, 0, $e);
+                $i_chars = substr($baseStr, 0, $f);
+                $j = 0;
+                $d_arr = str_split(strrev($d));
+                foreach ($d_arr as $c => $b) {
+                    $pos = strpos($h_chars, $b);
+                    if ($pos !== false) $j += $pos * pow($e, $c);
+                }
+                $k = "";
+                while ($j > 0) {
+                    $k = $i_chars[$j % $f] . $k;
+                    $j = intval(($j - ($j % $f)) / $f);
+                }
+                return $k ?: "0";
+            };
 
-            if (preg_match('/<h4[^>]*class=["\']results-list-item-title["\'][^>]*>(.*?)<\/h4>/is', $fbRes, $m)) {
-                $fbTitle = trim(strip_tags(html_entity_decode($m[1])));
-            }
-            if (preg_match('/<img[^>]+src=["\']([^"\'\s]+)["\']/', $fbRes, $m)) {
-                $fbThumb = html_entity_decode($m[1]);
+            $r_str = "";
+            $len = strlen($h_str);
+            $n_arr = str_split($n_str);
+            $delimiter = $n_str[$e_val] ?? '';
+            for ($i = 0; $i < $len; $i++) {
+                $s_chunk = "";
+                while ($i < $len && $h_str[$i] !== $delimiter) {
+                    $s_chunk .= $h_str[$i];
+                    $i++;
+                }
+                for ($j = 0; $j < count($n_arr); $j++) {
+                    $s_chunk = str_replace($n_arr[$j], (string)$j, $s_chunk);
+                }
+                $val = (int)$decodeNum($s_chunk, $e_val, 10) - $t_val;
+                if ($val > 0) $r_str .= chr($val);
             }
 
-            if (preg_match_all('/<a[^>]+href=["\']([^"\'\s]*(?:ssscdn\.io|fbcdn|cdninstagram)[^"\'\s]*)["\']/i', $fbRes, $m) || preg_match_all('/<a[^>]+class=["\']results-list-item-btn["\'][^>]+href=["\']([^"\'\s]+)["\']/i', $fbRes, $m)) {
-                foreach (array_unique($m[1]) as $idx => $linkUrl) {
-                    $cleanUrl = html_entity_decode($linkUrl);
-                    if (strpos($cleanUrl, 'http') === 0 && strpos($cleanUrl, 'play.google.com') === false) {
-                        $label = ($idx === 0) ? 'Download HD Video' : (($idx === 1) ? 'Download SD Video' : 'Download Option ' . ($idx + 1));
-                        $fbLinks[] = [
-                            'url' => $cleanUrl,
-                            'format' => 'mp4',
-                            'label' => $label
-                        ];
+            $decoded = urldecode($r_str);
+            if ($decoded) {
+                $clean = str_replace('\\/', '/', $decoded);
+                $fbTitle = "Facebook Video";
+                if (preg_match('/<p[^>]*class=["\']video-des["\'][^>]*>(.*?)<\/p>/is', $clean, $tm) || preg_match('/<h4[^>]*class=["\']results-list-item-title["\'][^>]*>(.*?)<\/h4>/is', $clean, $tm)) {
+                    $fbTitle = trim(strip_tags($tm[1]));
+                }
+                $fbThumb = "assets/images/placeholder.jpg";
+                if (preg_match('/<img[^>]+src=["\']([^"\'\s]+)["\']/', $clean, $im)) {
+                    $fbThumb = $im[1];
+                }
+                $fbLinks = [];
+                if (preg_match_all('/<a[^>]+href=["\']([^"\'\s]+)["\'][^>]*>(.*?)<\/a>/is', $clean, $lmMatches)) {
+                    foreach ($lmMatches[1] as $idx => $vUrl) {
+                        $vUrl = html_entity_decode($vUrl);
+                        $btnText = trim(strip_tags($lmMatches[2][$idx]));
+                        if (strpos($vUrl, 'http') === 0 && strpos(strtolower($vUrl), 'snapsave') === false && strpos(strtolower($btnText), 'app') === false && !preg_match('/\.(jpg|png|webp)(\?|$)/i', $vUrl)) {
+                            $fbLinks[] = [
+                                'url' => $vUrl,
+                                'format' => 'mp4',
+                                'label' => 'Download ' . ($btnText ?: ('Option ' . ($idx + 1)))
+                            ];
+                        }
                     }
                 }
-            }
-
-            if (!empty($fbLinks)) {
-                $realData = [
-                    'title' => $fbTitle ?: 'Facebook Video',
-                    'thumbnail' => $fbThumb,
-                    'duration' => '--',
-                    'size' => '--',
-                    'platform' => 'Facebook',
-                    'links' => $fbLinks
-                ];
+                if (!empty($fbLinks)) {
+                    $realData = [
+                        'title' => $fbTitle,
+                        'thumbnail' => $fbThumb,
+                        'duration' => '--',
+                        'size' => '--',
+                        'platform' => 'Facebook',
+                        'links' => $fbLinks
+                    ];
+                }
             }
         }
     }
