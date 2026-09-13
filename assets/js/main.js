@@ -72,7 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const lowerUrl = videoUrl.toLowerCase();
 
                 // 1. TikTok, Instagram, or Facebook via Tikwm Client API
-                if (lowerUrl.includes('tiktok.com') || lowerUrl.includes('instagram.com') || lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch')) {
+                if (lowerUrl.includes('tiktok.com') || lowerUrl.includes('instagram.com') || lowerUrl.includes('instagr.am') || lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch')) {
                     fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(videoUrl))
                     .then(res => res.json())
                     .then(resData => {
@@ -91,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             if (links.length > 0) {
                                 let detectedPlatform = 'Social Media';
                                 if (lowerUrl.includes('tiktok.com')) detectedPlatform = 'TikTok';
-                                else if (lowerUrl.includes('instagram.com')) detectedPlatform = 'Instagram';
+                                else if (lowerUrl.includes('instagram.com') || lowerUrl.includes('instagr.am')) detectedPlatform = 'Instagram';
                                 else if (lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch')) detectedPlatform = 'Facebook';
 
                                 showResult({
@@ -107,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                         
                         // Fallback 1b: Instagram oEmbed Client Fallback
-                        if (lowerUrl.includes('instagram.com')) {
+                        if (lowerUrl.includes('instagram.com') || lowerUrl.includes('instagr.am')) {
                             fetch('https://api.instagram.com/oembed/?url=' + encodeURIComponent(videoUrl))
                             .then(r => r.json())
                             .then(oData => {
@@ -120,7 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                         size: '--',
                                         platform: 'Instagram',
                                         links: [
-                                            { url: oData.thumbnail_url, format: 'jpg', label: 'Download Thumbnail / Cover' }
+                                            { url: oData.thumbnail_url, format: 'jpg', label: 'Download Cover / Photo' }
                                         ]
                                     });
                                     return;

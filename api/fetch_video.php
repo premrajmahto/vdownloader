@@ -202,7 +202,6 @@ if (!$realData && function_exists('curl_init')) {
 
     // A. Facebook Fallback (Reels, Videos, Watch, Share Links)
     if ($platform === 'Facebook' && !$realData) {
-        // Attempt A1: GetMyFB API (Supports Reels & Videos)
         $fbRes = curl_request("https://getmyfb.com/process", 'POST', "id=" . urlencode($url) . "&locale=en", [
             'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
             'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -249,7 +248,6 @@ if (!$realData && function_exists('curl_init')) {
             }
         }
 
-        // Attempt A2: Direct Crawl using Facebook External Hit User Agent
         if (!$realData) {
             $fbHtml = curl_request($url, 'GET', null, [
                 'User-Agent: facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)'
@@ -332,69 +330,136 @@ if (!$realData && function_exists('curl_init')) {
         }
     }
 
-    // C. Instagram Direct Scraper & oEmbed Fallbacks
+    // C. Instagram Multi-stage Scraper (SnapSave + Embed + Crawling)
     if ($platform === 'Instagram' && !$realData) {
-        $igTitle = "Instagram Reel";
-        $igThumb = "assets/images/placeholder.jpg";
-        $igLinks = [];
-
-        // Attempt C1: Instagram oEmbed for metadata
-        $oembedRes = curl_request("https://api.instagram.com/oembed/?url=" . urlencode($url));
-        if ($oembedRes) {
-            $oJson = json_decode($oembedRes, true);
-            if (!empty($oJson['title'])) $igTitle = $oJson['title'];
-            if (!empty($oJson['thumbnail_url'])) $igThumb = $oJson['thumbnail_url'];
-        }
-
-        // Attempt C2: Direct Crawl using Crawler User Agent
-        $igHtml = curl_request($url, 'GET', null, [
-            'User-Agent: facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)'
+        // Attempt C1: SnapSave API for Instagram Reels / Posts
+        $snapRes = curl_request('https://snapsave.app/action.php?lang=en', 'POST', ['url' => $url], [
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Origin: https://snapsave.app',
+            'Referer: https://snapsave.app/'
         ], 6);
 
-        if ($igHtml) {
-            if (preg_match('/<meta\s+property=["\']og:title["\']\s+content=["\']([^"\'\s]+)["\']/i', $igHtml, $m)) {
-                $igTitle = html_entity_decode($m[1]);
-            }
-            if (preg_match('/<meta\s+property=["\']og:image["\']\s+content=["\']([^"\'\s]+)["\']/i', $igHtml, $m)) {
-                $igThumb = html_entity_decode($m[1]);
-            }
-
-            if (preg_match_all('/<meta\s+property=["\']og:video(?::url)?["\']\s+content=["\']([^"\'\s]+)["\']/i', $igHtml, $m)) {
-                foreach ($m[1] as $vUrl) {
-                    $igLinks[] = ['url' => html_entity_decode($vUrl), 'format' => 'mp4', 'label' => 'Download Reel (MP4)'];
+        if ($snapRes && preg_match('/eval\(function\(h,u,n,t,e,r\)\{.*?\}\s*\(\s*["\'](.*?)["\']\s*,\s*(\d+)\s*,\s*["\'](.*?)["\']\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/s', $snapRes, $m)) {
+            $h_str = $m[1]; $u_val = (int)$m[2]; $n_str = $m[3]; $t_val = (int)$m[4]; $e_val = (int)$m[5];
+            $baseStr = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/";
+            
+            $decodeNum = function($d, $e, $f) use ($baseStr) {
+                $h_chars = substr($baseStr, 0, $e);
+                $i_chars = substr($baseStr, 0, $f);
+                $j = 0;
+                $d_arr = str_split(strrev($d));
+                foreach ($d_arr as $c => $b) {
+                    $pos = strpos($h_chars, $b);
+                    if ($pos !== false) $j += $pos * pow($e, $c);
                 }
+                $k = "";
+                while ($j > 0) {
+                    $k = $i_chars[$j % $f] . $k;
+                    $j = intval(($j - ($j % $f)) / $f);
+                }
+                return $k ?: "0";
+            };
+
+            $r_str = "";
+            $len = strlen($h_str);
+            $n_arr = str_split($n_str);
+            $delimiter = $n_str[$e_val] ?? '';
+            for ($i = 0; $i < $len; $i++) {
+                $s_chunk = "";
+                while ($i < $len && $h_str[$i] !== $delimiter) {
+                    $s_chunk .= $h_str[$i];
+                    $i++;
+                }
+                for ($j = 0; $j < count($n_arr); $j++) {
+                    $s_chunk = str_replace($n_arr[$j], (string)$j, $s_chunk);
+                }
+                $val = (int)$decodeNum($s_chunk, $e_val, 10) - $t_val;
+                if ($val > 0) $r_str .= chr($val);
             }
 
-            if (empty($igLinks)) {
-                if (preg_match_all('/"(?:video_url|video_versions)"\s*:\s*\[?\s*\{\s*"[^"]*"\s*:\s*[^,]+,\s*"url"\s*:\s*"([^"]+)"/i', $igHtml, $m)) {
-                    foreach (array_unique($m[1]) as $idx => $vUrl) {
-                        $cleanUrl = str_replace(['\/', '\\u00253D', '\\u0026'], ['/', '=', '&'], $vUrl);
-                        if (strpos($cleanUrl, 'http') === 0) {
-                            $igLinks[] = ['url' => $cleanUrl, 'format' => 'mp4', 'label' => 'Download Reel Option ' . ($idx + 1)];
+            $decoded = urldecode($r_str);
+            if ($decoded) {
+                $clean = str_replace('\\/', '/', $decoded);
+                $snapTitle = "Instagram Video";
+                if (preg_match('/<p[^>]*class=["\']video-des["\'][^>]*>(.*?)<\/p>/is', $clean, $tm)) {
+                    $snapTitle = trim(strip_tags($tm[1]));
+                }
+                $snapThumb = "assets/images/placeholder.jpg";
+                if (preg_match('/<img[^>]+src=["\']([^"\'\s]+)["\']/', $clean, $im)) {
+                    $snapThumb = $im[1];
+                }
+                $snapLinks = [];
+                if (preg_match_all('/<a[^>]+href=["\']([^"\'\s]+)["\'][^>]*>(.*?)<\/a>/is', $clean, $lmMatches)) {
+                    foreach ($lmMatches[1] as $idx => $vUrl) {
+                        $vUrl = html_entity_decode($vUrl);
+                        $btnText = trim(strip_tags($lmMatches[2][$idx]));
+                        if (strpos($vUrl, 'http') === 0 && strpos(strtolower($vUrl), 'snapsave') === false && strpos(strtolower($btnText), 'app') === false) {
+                            $snapLinks[] = [
+                                'url' => $vUrl,
+                                'format' => 'mp4',
+                                'label' => 'Download ' . ($btnText ?: ('Option ' . ($idx + 1)))
+                            ];
                         }
                     }
                 }
-            }
-
-            if (empty($igLinks)) {
-                if (preg_match_all('/https?:\\\\\/\\\\\/[^\s"\'<>]*(?:scontent|fbcdn)[^\s"\'<>]+\.mp4[^\s"\'<>]*/i', $igHtml, $m)) {
-                    foreach (array_unique($m[0]) as $idx => $vUrl) {
-                        $cleanUrl = str_replace(['\/', '\\u00253D', '\\u0026'], ['/', '=', '&'], $vUrl);
-                        $igLinks[] = ['url' => $cleanUrl, 'format' => 'mp4', 'label' => 'Download Reel Video ' . ($idx + 1)];
-                    }
+                if (!empty($snapLinks)) {
+                    $realData = [
+                        'title' => $snapTitle,
+                        'thumbnail' => $snapThumb,
+                        'duration' => '--',
+                        'size' => '--',
+                        'platform' => 'Instagram',
+                        'links' => $snapLinks
+                    ];
                 }
             }
         }
 
-        if (!empty($igLinks)) {
-            $realData = [
-                'title' => $igTitle,
-                'thumbnail' => $igThumb,
-                'duration' => '--',
-                'size' => '--',
-                'platform' => 'Instagram',
-                'links' => $igLinks
-            ];
+        // Attempt C2: Instagram Embed URL parsing (/embed/)
+        if (!$realData) {
+            $embedUrl = rtrim($url, '/') . '/embed/';
+            $embedHtml = curl_request($embedUrl, 'GET', null, [
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            ], 6);
+
+            if ($embedHtml) {
+                $eTitle = "Instagram Reel";
+                $eThumb = "assets/images/placeholder.jpg";
+                $eLinks = [];
+
+                if (preg_match('/<div[^>]*class=["\']Caption["\'][^>]*>(.*?)<\/div>/is', $embedHtml, $m)) {
+                    $eTitle = trim(strip_tags(html_entity_decode($m[1])));
+                }
+                if (preg_match('/<img[^>]+class=["\']EmbeddedMediaImage["\'][^>]+src=["\']([^"\'\s]+)["\']/i', $embedHtml, $m)) {
+                    $eThumb = html_entity_decode($m[1]);
+                }
+
+                if (preg_match('/<video[^>]+src=["\']([^"\'\s]+)["\']/i', $embedHtml, $m)) {
+                    $eLinks[] = ['url' => html_entity_decode($m[1]), 'format' => 'mp4', 'label' => 'Download Reel (MP4)'];
+                }
+
+                if (empty($eLinks)) {
+                    if (preg_match_all('/"(?:video_url|video_versions)"\s*:\s*\[?\s*\{\s*"[^"]*"\s*:\s*[^,]+,\s*"url"\s*:\s*"([^"]+)"/i', $embedHtml, $m)) {
+                        foreach (array_unique($m[1]) as $idx => $vUrl) {
+                            $cleanUrl = str_replace(['\/', '\\u00253D', '\\u0026'], ['/', '=', '&'], $vUrl);
+                            if (strpos($cleanUrl, 'http') === 0) {
+                                $eLinks[] = ['url' => $cleanUrl, 'format' => 'mp4', 'label' => 'Download Video Option ' . ($idx + 1)];
+                            }
+                        }
+                    }
+                }
+
+                if (!empty($eLinks)) {
+                    $realData = [
+                        'title' => $eTitle,
+                        'thumbnail' => $eThumb,
+                        'duration' => '--',
+                        'size' => '--',
+                        'platform' => 'Instagram',
+                        'links' => $eLinks
+                    ];
+                }
+            }
         }
     }
 
