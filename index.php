@@ -51,9 +51,9 @@ $placeholder = $inputPlaceholder ?? "Paste YouTube video or Shorts URL here";
 
     <!-- Hero Section -->
     <section class="hero-section">
-        <div class="container mt-5 pt-5">
+        <div class="container pt-5 mt-2 mt-md-3">
             <h1 class="display-4 fw-bold mb-3"><?= htmlspecialchars($heroHeader) ?></h1>
-            <p class="lead mb-5"><?= $heroSub ?></p>
+            <p class="lead mb-4"><?= $heroSub ?></p>
 
             <div class="row justify-content-center">
                 <div class="col-md-8 col-lg-6">
