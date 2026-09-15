@@ -59,10 +59,10 @@ $placeholder = $inputPlaceholder ?? "Paste YouTube video or Shorts URL here";
                 <div class="col-md-8 col-lg-6">
                     <div class="glass-card">
                         <form id="downloadForm">
-                            <div class="input-group hero-input-group mb-3">
-                                <input type="url" id="videoUrl" class="form-control hero-input"
+                            <div class="hero-input-wrapper mb-3">
+                                <input type="url" id="videoUrl" class="form-control hero-input mb-3"
                                     placeholder="<?= htmlspecialchars($placeholder) ?>" required>
-                                <button class="btn btn-download" type="submit">Download <i
+                                <button class="btn btn-download w-100" type="submit">Download <i
                                         class="fas fa-arrow-right"></i></button>
                             </div>
                         </form>

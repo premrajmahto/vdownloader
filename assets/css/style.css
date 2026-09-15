@@ -48,6 +48,7 @@ body {
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
 }
 
+.hero-input-wrapper,
 .hero-input-group {
     background: transparent;
     display: flex;
