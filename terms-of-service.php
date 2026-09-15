@@ -39,19 +39,7 @@ $pageDesc = "Terms of Service for Vdownloader. Read our rules and guidelines.";
             <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
                 <ul class="navbar-nav align-items-center">
                     <li class="nav-item"><a class="nav-link text-white fw-bold" href="index.php">Home</a></li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle text-white fw-bold" href="#" id="platformDropdown"
-                            role="button" data-bs-toggle="dropdown" aria-expanded="false">Platforms</a>
-                        <ul class="dropdown-menu" aria-labelledby="platformDropdown">
-                            <li><a class="dropdown-item" href="instagram-video-downloader.php">Instagram</a></li>
-                            <li><a class="dropdown-item" href="facebook-video-downloader.php">Facebook</a></li>
-                            <li><a class="dropdown-item" href="tiktok-video-downloader.php">TikTok</a></li>
-                            <li><a class="dropdown-item" href="twitter-video-downloader.php">Twitter / X</a></li>
-                            <li><a class="dropdown-item" href="pinterest-video-downloader.php">Pinterest</a></li>
-                            <li><a class="dropdown-item" href="youtube-video-downloader.php">YouTube</a></li>
-                            <li><a class="dropdown-item" href="snapchat-video-downloader.php">Snapchat</a></li>
-                        </ul>
-                    </li>
+                    <li class="nav-item"><a class="nav-link text-white fw-bold" href="youtube-video-downloader.php">YouTube Downloader</a></li>
                     <li class="nav-item"><a class="nav-link text-white fw-bold" href="video-to-audio.php">Convert Video
                             to Audio</a></li>
                     <li class="nav-item"><a class="nav-link text-white fw-bold" href="contact.php">Contact</a></li>

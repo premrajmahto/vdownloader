@@ -71,82 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
             function attemptClientSideFallback(videoUrl, failMessage) {
                 const lowerUrl = videoUrl.toLowerCase();
 
-                // 1. Instagram & Facebook Client Extraction (SnapSave Client API)
-                if (lowerUrl.includes('instagram.com') || lowerUrl.includes('instagr.am') || lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch')) {
-                    const isIg = lowerUrl.includes('instagram.com') || lowerUrl.includes('instagr.am');
-                    const targetPlatform = isIg ? 'Instagram' : 'Facebook';
-
-                    fetch('https://snapsave.app/action.php?lang=en', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded'
-                        },
-                        body: new URLSearchParams({ url: videoUrl })
-                    })
-                    .then(r => r.text())
-                    .then(snapRes => {
-                        const decodedHtml = decodeSnapSaveJS(snapRes);
-                        if (decodedHtml) {
-                            const links = [];
-                            let title = targetPlatform + ' Video';
-                            let thumb = 'assets/images/placeholder.jpg';
-
-                            const titleMatch = decodedHtml.match(/<p[^>]*class=["\']video-des["\'][^>]*>(.*?)<\/p>/i) || decodedHtml.match(/<h4[^>]*class=["\']results-list-item-title["\'][^>]*>(.*?)<\/h4>/i);
-                            if (titleMatch) title = titleMatch[1].replace(/<[^>]+>/g, '').trim();
-
-                            const imgMatch = decodedHtml.match(/<img[^>]+src=["\']([^"\'\s]+)["\']/i);
-                            if (imgMatch) thumb = imgMatch[1];
-
-                            const aRegex = /<a[^>]+href=["\']([^"\'\s]+)["\'][^>]*>(.*?)<\/a>/gi;
-                            let m;
-                            while ((m = aRegex.exec(decodedHtml)) !== null) {
-                                let linkUrl = m[1].replace(/&amp;/g, '&');
-                                let btnText = m[2].replace(/<[^>]+>/g, '').trim();
-                                if (linkUrl.startsWith('http') && !linkUrl.toLowerCase().includes('snapsave') && !btnText.toLowerCase().includes('app') && !linkUrl.match(/\.(jpg|png|webp)(\?|$)/i)) {
-                                    links.push({
-                                        url: linkUrl,
-                                        format: 'mp4',
-                                        label: 'Download ' + (btnText || ('Video ' + (links.length + 1)))
-                                    });
-                                }
-                            }
-
-                            if (links.length > 0) {
-                                loader.style.display = 'none';
-                                showResult({
-                                    title: title,
-                                    thumbnail: thumb,
-                                    duration: '--',
-                                    size: '--',
-                                    platform: targetPlatform,
-                                    links: links
-                                });
-                                return;
-                            }
-                        }
-                        if (isIg) {
-                            fallbackIgOembed(videoUrl, failMessage);
-                        } else {
-                            fallbackTikwm(videoUrl, failMessage);
-                        }
-                    })
-                    .catch(() => {
-                        if (isIg) {
-                            fallbackIgOembed(videoUrl, failMessage);
-                        } else {
-                            fallbackTikwm(videoUrl, failMessage);
-                        }
-                    });
-                    return;
-                }
-
-                // 2. TikTok via Tikwm Client API
-                if (lowerUrl.includes('tiktok.com')) {
-                    fallbackTikwm(videoUrl, failMessage);
-                    return;
-                }
-
-                // 3. YouTube via oEmbed & Piped / Invidious Client API
+                // YouTube via oEmbed & Piped / Invidious Client API
                 const ytMatch = videoUrl.match(/(?:v=|\/embed\/|\/1\/|\/v\/|https?:\/\/youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
                 if (ytMatch) {
                     const videoId = ytMatch[1];
@@ -191,31 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                // 4. General Fallback for Twitter / Pinterest / Snapchat
-                fetch('https://www.tikwm.com/api/?url=' + encodeURIComponent(videoUrl))
-                .then(r => r.json())
-                .then(resData => {
-                    loader.style.display = 'none';
-                    if (resData && resData.code === 0 && resData.data && (resData.data.play || resData.data.wmplay)) {
-                        const d = resData.data;
-                        let links = [];
-                        if (d.play) links.push({ url: d.play, format: 'mp4', label: 'Download Media' });
-                        if (d.music) links.push({ url: d.music, format: 'mp3', label: 'Download Audio' });
-                        showResult({
-                            title: d.title || 'Social Video',
-                            thumbnail: d.cover || 'assets/images/placeholder.jpg',
-                            duration: d.duration ? d.duration + 's' : '--',
-                            size: '--',
-                            platform: 'Social Media',
-                            links: links
-                        });
-                    } else {
-                        showFinalError(failMessage);
-                    }
-                })
-                .catch(() => {
-                    showFinalError(failMessage);
-                });
+                showFinalError(failMessage || 'Platform not supported. Only YouTube URLs are supported.');
             }
 
             function fallbackTikwm(videoUrl, failMessage) {
@@ -244,59 +145,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 .catch(() => {
                     showFinalError(failMessage || "Unable to download video from this link. Please verify the URL.");
                 });
-            }
-
-            function fallbackIgOembed(videoUrl, failMessage) {
-                showFinalError(failMessage || "Unable to download video from this Instagram link. Please ensure the post or Reel is public and contains a video.");
-            }
-
-            function decodeSnapSaveJS(snapRes) {
-                try {
-                    const match = snapRes.match(/eval\(function\(h,u,n,t,e,r\)\{.*?\}\s*\(\s*["\'](.*?)["\']\s*,\s*(\d+)\s*,\s*["\'](.*?)["\']\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/s);
-                    if (!match) return null;
-                    let h_str = match[1], u_val = parseInt(match[2]), n_str = match[3], t_val = parseInt(match[4]), e_val = parseInt(match[5]);
-                    const baseStr = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/";
-                    
-                    function decodeNum(d, e, f) {
-                        let h_chars = baseStr.substring(0, e);
-                        let i_chars = baseStr.substring(0, f);
-                        let j = 0;
-                        let d_arr = d.split('').reverse();
-                        d_arr.forEach((b, c) => {
-                            let pos = h_chars.indexOf(b);
-                            if (pos !== -1) j += pos * Math.pow(e, c);
-                        });
-                        let k = "";
-                        while (j > 0) {
-                            k = i_chars[j % f] + k;
-                            j = Math.floor((j - (j % f)) / f);
-                        }
-                        return k || "0";
-                    }
-
-                    let r_str = "";
-                    let len = h_str.length;
-                    let n_arr = n_str.split('');
-                    let delimiter = n_str[e_val] || '';
-                    let i = 0;
-                    while (i < len) {
-                        let s_chunk = "";
-                        while (i < len && h_str[i] !== delimiter) {
-                            s_chunk += h_str[i];
-                            i++;
-                        }
-                        n_arr.forEach((b, j) => {
-                            s_chunk = s_chunk.replaceAll(b, j.toString());
-                        });
-                        let val = parseInt(decodeNum(s_chunk, e_val, 10)) - t_val;
-                        if (val > 0) r_str += String.fromCharCode(val);
-                        i++;
-                    }
-
-                    return decodeURIComponent(r_str).replace(/\\\//g, '/');
-                } catch (e) {
-                    return null;
-                }
             }
 
             function showFinalError(msg) {

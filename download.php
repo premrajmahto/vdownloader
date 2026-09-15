@@ -23,14 +23,6 @@ if (isset($_GET['url']) && isset($_GET['name'])) {
     $host = strtolower(parse_url($fileUrl, PHP_URL_HOST) ?? '');
     if (strpos($host, 'youtube') !== false || strpos($host, 'googlevideo') !== false || strpos($host, 'savenow.to') !== false || strpos($host, 'affadaffa') !== false) {
         $referer = 'https://loader.to/';
-    } elseif (strpos($host, 'ssscdn') !== false || strpos($host, 'snapsave') !== false || strpos($host, 'getmyfb') !== false) {
-        $referer = 'https://snapsave.app/';
-    } elseif (strpos($host, 'facebook') !== false || strpos($host, 'fbcdn') !== false) {
-        $referer = 'https://www.facebook.com/';
-    } elseif (strpos($host, 'instagram') !== false || strpos($host, 'cdninstagram') !== false) {
-        $referer = 'https://www.instagram.com/';
-    } elseif (strpos($host, 'tikwm') !== false || strpos($host, 'tiktok') !== false) {
-        $referer = 'https://www.tikwm.com/';
     }
 
     $headersSent = false;

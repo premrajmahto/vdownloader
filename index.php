@@ -1,9 +1,9 @@
 <?php
-$title = $pageTitle ?? "Vdownloader - Social Media Video Downloader Instantly";
-$desc = $pageDesc ?? "Free Instagram, Facebook, TikTok & Twitter Video Downloader. Fast, secure, and without watermark.";
-$heroHeader = $heroTitle ?? "Download Social Media Videos Instantly";
-$heroSub = $heroSubtitle ?? 'Free <span class="badge bg-white text-dark rounded-circle p-1"><i class="fab fa-instagram" style="background: radial-gradient(circle at 30% 107%, #fdf497 0%,#fd5949 45%,#d6249f 60%,#285AEB 90%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;"></i></span> Instagram, <span class="badge bg-white text-dark rounded-circle p-1"><i class="fab fa-facebook" style="color: #1877F2;"></i></span> Facebook, <span class="badge bg-dark text-white rounded-circle p-1 border border-light border-2"><i class="fab fa-tiktok" style="color: white; text-shadow: 1.5px 1.5px 0 #ff0050, -1.5px -1.5px 0 #00f2fe;"></i></span> TikTok, <span class="badge bg-white text-dark rounded-circle p-1"><i class="fab fa-youtube" style="color: #FF0000;"></i></span> YouTube, <span class="badge rounded-circle p-1" style="background-color: #FFFC00;"><i class="fab fa-snapchat-ghost" style="color: #000;"></i></span> Snapchat & <span class="badge bg-white text-dark rounded-circle p-1"><i class="fab fa-twitter" style="color: #1DA1F2;"></i></span> Twitter Video Downloader';
-$placeholder = $inputPlaceholder ?? "Paste video URL here (Instagram, TikTok, YT, Twitter, etc)";
+$title = $pageTitle ?? "YouTube Video & Shorts Downloader - Vdownloader";
+$desc = $pageDesc ?? "Free YouTube Video and Shorts Downloader. Fast, secure, and in HD quality.";
+$heroHeader = $heroTitle ?? "Download YouTube Videos & Shorts Instantly";
+$heroSub = $heroSubtitle ?? 'Free <span class="badge bg-white text-dark rounded-circle p-1"><i class="fab fa-youtube" style="color: #FF0000;"></i></span> YouTube Video and Shorts Downloader online in high quality.';
+$placeholder = $inputPlaceholder ?? "Paste YouTube video or Shorts URL here";
 ?>
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
@@ -36,19 +36,7 @@ $placeholder = $inputPlaceholder ?? "Paste video URL here (Instagram, TikTok, YT
             <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
                 <ul class="navbar-nav align-items-center">
                     <li class="nav-item"><a class="nav-link text-white fw-bold" href="index.php">Home</a></li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle text-white fw-bold" href="#" id="platformDropdown"
-                            role="button" data-bs-toggle="dropdown" aria-expanded="false">Platforms</a>
-                        <ul class="dropdown-menu" aria-labelledby="platformDropdown">
-                            <li><a class="dropdown-item" href="instagram-video-downloader.php">Instagram</a></li>
-                            <li><a class="dropdown-item" href="facebook-video-downloader.php">Facebook</a></li>
-                            <li><a class="dropdown-item" href="tiktok-video-downloader.php">TikTok</a></li>
-                            <li><a class="dropdown-item" href="twitter-video-downloader.php">Twitter / X</a></li>
-                            <li><a class="dropdown-item" href="pinterest-video-downloader.php">Pinterest</a></li>
-                            <li><a class="dropdown-item" href="youtube-video-downloader.php">YouTube</a></li>
-                            <li><a class="dropdown-item" href="snapchat-video-downloader.php">Snapchat</a></li>
-                        </ul>
-                    </li>
+                    <li class="nav-item"><a class="nav-link text-white fw-bold" href="youtube-video-downloader.php">YouTube Downloader</a></li>
                     <li class="nav-item"><a class="nav-link text-white fw-bold" href="video-to-audio.php">Convert Video
                             to Audio</a></li>
                     <li class="nav-item"><a class="nav-link text-white fw-bold" href="contact.php">Contact</a></li>
@@ -121,15 +109,9 @@ $placeholder = $inputPlaceholder ?? "Paste video URL here (Instagram, TikTok, YT
 
     <!-- Supported Platforms -->
     <section class="container mt-5 text-center">
-        <h3 class="fw-bold mb-4">Supported Platforms</h3>
+        <h3 class="fw-bold mb-4">Supported Platform</h3>
         <div class="platform-icons">
-            <i class="fab fa-instagram" title="Instagram"></i>
-            <i class="fab fa-facebook" title="Facebook"></i>
-            <i class="fab fa-tiktok" title="TikTok"></i>
-            <i class="fab fa-twitter" title="Twitter"></i>
-            <i class="fab fa-pinterest" title="Pinterest"></i>
-            <i class="fab fa-youtube" title="YouTube Shorts"></i>
-            <i class="fab fa-snapchat-ghost" title="Snapchat"></i>
+            <i class="fab fa-youtube text-danger fs-1" title="YouTube Videos & Shorts"></i>
         </div>
     </section>
 
