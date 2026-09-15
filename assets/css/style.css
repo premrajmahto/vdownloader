@@ -50,9 +50,13 @@ body {
 
 .hero-input-group {
     background: transparent;
+    display: flex;
+    align-items: stretch;
 }
 
 .hero-input {
+    flex: 1 1 auto;
+    min-width: 0;
     border-radius: 50px 0 0 50px !important;
     padding: 15px 25px;
     border: 1px solid #ddd;
@@ -77,11 +81,12 @@ body {
 }
 
 .btn-download {
+    flex: 0 0 auto;
     border-radius: 0 50px 50px 0 !important;
     background: var(--primary-color) !important;
     color: #ffffff !important;
     border: none;
-    padding: 15px 40px;
+    padding: 15px 35px;
     font-weight: bold;
     transition: transform 0.2s, background 0.3s;
     z-index: 10 !important;
@@ -90,7 +95,7 @@ body {
 
 .btn-download:hover {
     background: var(--secondary-color) !important;
-    transform: scale(1.05);
+    transform: scale(1.03);
     color: #ffffff !important;
 }
 
@@ -211,5 +216,33 @@ body {
     .dropdown-item:hover {
         background: rgba(255, 255, 255, 0.1) !important;
         color: white !important;
+    }
+}
+
+/* Mobile Input & Button Fix */
+@media (max-width: 576px) {
+    .glass-card {
+        padding: 20px 15px;
+    }
+
+    .hero-input-group {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .hero-input {
+        border-radius: 50px !important;
+        width: 100% !important;
+        text-align: center;
+        padding: 14px 20px;
+    }
+
+    .btn-download {
+        border-radius: 50px !important;
+        width: 100% !important;
+        padding: 14px 20px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
     }
 }
